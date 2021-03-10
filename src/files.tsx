@@ -327,8 +327,8 @@ function UploadFilesButton(props: {
       {icon: mdiUpload}
   if (fileStatus !== null && fileStatus.action === 'upload' && fileStatus.filename === EMPTY_FILENAME)
     uploadIcon = fileStatus.success ?
-        {icon: mdiCheck, className: 'success'}
-        : {icon: mdiAlertCircle, className: 'error'}
+        {icon: mdiCheck, className: 'success-text'}
+        : {icon: mdiAlertCircle, className: 'error-text'}
   return <UploadButton
       icon={uploadIcon.icon}
       tooltip={'Upload files'}
@@ -350,8 +350,8 @@ function SaveButton(
       {icon: mdiContentSave}
   if (!disableReason && fileStatus !== null && fileStatus.action === 'save' && fileStatus.filename === filename) {
     saveIcon = fileStatus.success ?
-        {icon: mdiCheck, className: 'success'}
-        : {icon: mdiAlertCircle, className: 'error'}
+        {icon: mdiCheck, className: 'success-text'}
+        : {icon: mdiAlertCircle, className: 'error-text'}
   }
   return <MdiButton
       icon={saveIcon.icon}
@@ -373,8 +373,8 @@ function LoadButton(
       {icon: mdiRefresh}
   if (fileStatus !== null && fileStatus.action === 'load' && fileStatus.filename === filename) {
     loadIcon = fileStatus.success ?
-        {icon: mdiCheck, className: 'success'}
-        : {icon: mdiAlertCircle, className: 'error'}
+        {icon: mdiCheck, className: 'success-text'}
+        : {icon: mdiAlertCircle, className: 'error-text'}
   }
   return <MdiButton
       icon={loadIcon.icon}
@@ -385,9 +385,9 @@ function LoadButton(
 
 function FileDownloadButton(props: { type: string, filename: string, highlight: boolean }) {
   const { type, filename, highlight } = props
-  const classNames = highlight ? 'button highlighted' : 'button'
+  const classNames = 'button ' + (highlight ? 'highlighted-button' : '')
   return <a className={classNames}
-            style={{width: 'max-content', textDecoration: 'none', color: 'black'}}
+            style={{width: 'max-content'}}
             data-tip={'Download '+filename}
             href={`${FLASKURL}/${type}/${filename}`}>
     {filename}
@@ -397,7 +397,7 @@ function FileDownloadButton(props: { type: string, filename: string, highlight: 
 function FileStatusMessage(props: { filename: string, fileStatus: FileStatus | null }) {
   const {fileStatus, filename} = props
   if (fileStatus && !fileStatus.success && fileStatus.filename === filename)
-    return <div className={fileStatus.success ? 'success' : 'error'}>
+    return <div className={fileStatus.success ? 'success-text' : 'error-text'}>
       Could not {fileStatus.action} config:<br/>
       {fileStatus.statusText}
     </div>
