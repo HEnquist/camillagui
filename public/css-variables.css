@@ -1,5 +1,5 @@
 /* Dark skin. */
-.css-variables {
+.css-variables-disabled {
 
     /*
       Styling is only supported using the following CSS variables.
@@ -113,5 +113,59 @@
     --arrow-color: var(--text-color);
     --frame-background-color: rgb(180, 180, 180);
     --block-background-color: rgb(233, 233, 233);
+    --block-text-color: rgb(16, 10, 90);
+}
+
+/* moOde Style */
+.css-variables {
+
+    /* moOde specific */
+    --accent-color: #27ae60;
+
+    /* General */
+    --background-color: #202020;
+    --text-color: #ddd;
+    --error-text-color: #c0392b;
+    --error-field-background-color: var(--error-text-color);
+    --success-text-color: #27ae60;
+    --neutral-text-color: #bbb;
+    --border-radius: 5px;
+
+    /* Buttons */
+    --button-icon-color: var(--text-color);
+    --button-add-icon-color: var(--success-text-color);
+    --button-remove-icon-color: var(--error-text-color);
+    --button-text-color: var(--accent-color);
+    --button-background-color: rgba(128,128,128,.2);
+    --button-border: 1px solid var(--background-color);
+    --hovered-button-background-color: var(--button-background-color);
+    --hovered-button-border: var(--button-border);
+    --active-button-background-color: var(--button-background-color);
+    --active-button-border: var(--button-border);
+    --disabled-button-opacity: 0.65;
+    --disabled-button-background-color: var(--button-background-color);
+    --disabled-button-border: var(--button-border);
+    --highlighted-button-background-color: var(--button-background-color);
+    --highlighted-button-border: 1px solid var(--accent-color);
+
+    /* Boxes */
+    --box-border-width: 1px;
+    --box-border-color: #999;
+    --box-border: var(--box-border-width) solid var(--box-border-color);
+
+    /* Inputs */
+    --input-border: 1px solid rgba(128,128,128,.5);
+    --focused-input-border: 1px solid var(--accent-color);
+
+    /* Dialogs */
+    --axes-color: #555;
+    --gain-color: #3980b9;
+    --phase-color: #27ae60;
+    --impulse-color: #c0392b;
+
+    /* Pipeline plot */
+    --arrow-color: var(--axes-color);
+    --frame-background-color: #333;
+    --block-background-color: rgb(200, 200, 200);
     --block-text-color: rgb(16, 10, 90);
 }
