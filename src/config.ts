@@ -32,6 +32,7 @@ export function defaultConfig(): Config {
         },
         filters: {},
         mixers: {},
+        processors: {},
         pipeline: [],
     }
 }
@@ -130,6 +131,49 @@ export function defaultSource(inChannels: number, sources: Source[]): Source {
     return {channel: newChannel, gain: 0, inverted: false, mute: false}
 }
 
+export function processorNamesOf(configOrProcessors: Config | Processors): string[] {
+    const processors: Processors = isConfig(configOrProcessors) ? configOrProcessors.processors : configOrProcessors
+    return sortedAlphabetically(Object.keys(processors))
+}
+
+export function newProcessorName(processors: Processors): string {
+    return newName('New Processor ', processorNamesOf(processors))
+}
+
+export function removeProcessor(config: Config, name: string) {
+    delete config.processors[name]
+    const pipeline = config.pipeline
+    config.pipeline = pipeline.filter(step => step.type !== 'Processor' || step.name !== name)
+}
+
+export function renameProcessor(config: Config, oldName: string, newName: string) {
+    if (processorNamesOf(config).includes(newName))
+        throw new Error(`Processor '${newName}' already exists`)
+    config.processors[newName] = config.processors[oldName]
+    delete config.processors[oldName]
+    for (let step of config.pipeline)
+        if (step.type === 'Processor' && step.name === oldName)
+            step.name = newName
+}
+
+export function defaultProcessor(): Processor {
+    return {
+        type: "Compressor",
+        parameters: {
+            channels: 2,
+            attack: 0.025,
+            release: 1.0,
+            threshold: -25,
+            factor: 5.0,
+            makeup_gain: 15,
+            soft_clip: true,
+            clip_limit: -2,
+            monitor_channels: [0, 1],
+            process_channels: [0, 1],
+        }
+    }
+}
+
 export function defaultFilterStep(config: Config): FilterStep {
     const filterNames = filterNamesOf(config)
     return {
@@ -147,10 +191,19 @@ export function defaultMixerStep(config: Config): MixerStep {
     }
 }
 
+export function defaultProcessorStep(config: Config): ProcessorStep {
+    const processorNames = processorNamesOf(config)
+    return {
+        type: 'Processor',
+        name: processorNames.length === 1 ? processorNames[0] : ''
+    }
+}
+
 export interface Config {
     devices: Devices,
     filters: Filters,
     mixers: Mixers,
+    processors: Processors,
     pipeline: Pipeline,
 }
 
@@ -242,7 +295,17 @@ export interface Source {
     mute: boolean
 }
 
+export interface Processors {
+    [name: string] : Processor
+}
+
+export interface Processor {
+    type: string
+    parameters: { [name: string]: any }
+}
+
 export type Pipeline = PipelineStep[]
-export type PipelineStep = MixerStep | FilterStep
+export type PipelineStep = MixerStep | FilterStep | ProcessorStep
 export interface MixerStep { type: 'Mixer', name: string }
+export interface ProcessorStep { type: 'Processor', name: string }
 export interface FilterStep { type: 'Filter', channel: number, names: string[] }

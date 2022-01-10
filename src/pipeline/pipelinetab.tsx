@@ -21,6 +21,7 @@ import {
   Config,
   defaultFilterStep,
   defaultMixerStep,
+  defaultProcessorStep,
   filterNamesOf,
   Filters,
   FilterStep,
@@ -28,7 +29,11 @@ import {
   Mixers,
   MixerStep,
   Pipeline,
-  PipelineStep
+  PipelineStep,
+  Processor,
+  Processors,
+  ProcessorStep,
+  processorNamesOf,
 } from "../config"
 import {mdiArrowDownBold, mdiArrowUpBold} from "@mdi/js"
 import {ErrorsForPath, errorsForSubpath} from "../utilities/errors"
@@ -58,12 +63,14 @@ export class PipelineTab extends React.Component<{
   removeStep = (index: number) =>
       this.updatePipeline(pipeline => pipeline.splice(index, 1))
 
-  setStepType = (index: number, type: 'Filter' | 'Mixer') =>
+  setStepType = (index: number, type: 'Filter' | 'Mixer' | 'Processor' ) =>
       this.updatePipeline(pipeline => {
         if (type === 'Mixer')
           pipeline[index] = defaultMixerStep(this.props.config)
         else if (type === 'Filter')
           pipeline[index] = defaultFilterStep(this.props.config)
+        else if (type === 'Processor')
+          pipeline[index] = defaultProcessorStep(this.props.config)
       })
 
   plotFilterStep = (index: number) => {
@@ -97,7 +104,7 @@ export class PipelineTab extends React.Component<{
               const stepErrors = errorsForSubpath(errors, index)
               const typeSelect = <EnumInput
                   value={step.type}
-                  options={['Mixer', 'Filter']}
+                  options={['Mixer', 'Filter', 'Processor']}
                   desc="type"
                   data-tip="Step type, Mixer or Filter"
                   onChange={type => this.setStepType(index, type)}/>
@@ -132,6 +139,16 @@ export class PipelineTab extends React.Component<{
                     typeSelect={typeSelect}
                     mixerStep={step}
                     mixers={this.props.config.mixers}
+                    updatePipeline={this.updatePipeline}
+                    errors={stepErrors}
+                    controls={controls}/>
+              if (step.type === 'Processor')
+                return <ProcessorStepView
+                    key={index}
+                    stepIndex={index}
+                    typeSelect={typeSelect}
+                    processorStep={step}
+                    processors={this.props.config.processors}
                     updatePipeline={this.updatePipeline}
                     errors={stepErrors}
                     controls={controls}/>
@@ -199,6 +216,46 @@ function MixerStepView(props: {
             options={options}
             desc="name"
             data-tip="Mixer name"
+            style={nameError ? ERROR_BACKGROUND_STYLE : undefined}
+            onChange={name => update(step => step.name = name)}/>
+        <ErrorMessage message={nameError}/>
+        <div className="horizontally-spaced-content">{controls}</div>
+      </div>
+    </Box>
+  </DndSortable>
+}
+
+function ProcessorStepView(props: {
+  stepIndex: number
+  typeSelect: ReactNode
+  processorStep: ProcessorStep
+  processors: Processors
+  updatePipeline: (update: Update<Pipeline>) => void
+  errors: ErrorsForPath
+  controls: ReactNode
+}) {
+  const {stepIndex, typeSelect, processors, processorStep, updatePipeline, controls} = props
+  const update = (update: Update<MixerStep>) => updatePipeline(pipeline => update(pipeline[stepIndex] as MixerStep))
+  const processor = processors[processorStep.name]
+  const title = "Processor"
+  const options = [''].concat(processorNamesOf(processors))
+  const nameError = props.errors({path: ['name']})
+  const dndProps = usePipelineStepDndSort(stepIndex, updatePipeline)
+  return <DndSortable {...dndProps}>
+    <Box title={
+      <>
+        <DragHandle drag={dndProps.drag} tooltip="Drag mixer to sort"/>
+        <label>{typeSelect}&nbsp;&nbsp;&nbsp;&nbsp;{title}</label>
+      </>
+    }>
+      <div className="vertically-spaced-content">
+        <ErrorMessage message={props.errors({path: []})}/>
+        <ErrorMessage message={props.errors({path: ['type']})}/>
+        <EnumInput
+            value={processorStep.name}
+            options={options}
+            desc="name"
+            data-tip="Processor name"
             style={nameError ? ERROR_BACKGROUND_STYLE : undefined}
             onChange={name => update(step => step.name = name)}/>
         <ErrorMessage message={nameError}/>

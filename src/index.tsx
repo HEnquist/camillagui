@@ -8,6 +8,7 @@ import * as ReactDOM from "react-dom"
 import {FiltersTab} from "./filterstab"
 import {DevicesTab} from "./devicestab"
 import {MixersTab} from "./mixerstab"
+import {ProcessorsTab} from "./processorstab"
 import {PipelineTab} from "./pipeline/pipelinetab"
 import {ErrorsForPath, noErrors, errorsForSubpath} from "./utilities/errors"
 import {Tab, TabList, TabPanel, Tabs} from "react-tabs"
@@ -100,6 +101,7 @@ class CamillaConfig extends React.Component<
           <Tab>Devices {errors({path: ['devices'], includeChildren: true}) && <ErrorIcon/>}</Tab>
           <Tab>Filters {errors({path: ['filters'], includeChildren: true}) && <ErrorIcon/>}</Tab>
           <Tab>Mixers {errors({path: ['mixers'], includeChildren: true}) && <ErrorIcon/>}</Tab>
+          <Tab>Processors {errors({path: ['processors'], includeChildren: true}) && <ErrorIcon/>}</Tab>
           <Tab>Pipeline {errors({path: ['pipeline'], includeChildren: true}) && <ErrorIcon/>}</Tab>
           <Tab>Files</Tab>
         </TabList>
@@ -126,6 +128,13 @@ class CamillaConfig extends React.Component<
               mixers={this.state.config.mixers}
               updateConfig={this.updateConfig}
               errors={errorsForSubpath(errors, 'mixers')}
+          />
+        </TabPanel>
+        <TabPanel>
+          <ProcessorsTab
+              processors={this.state.config.processors}
+              updateConfig={this.updateConfig}
+              errors={errorsForSubpath(errors, 'processors')}
           />
         </TabPanel>
         <TabPanel>
