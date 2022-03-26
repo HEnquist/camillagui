@@ -17,8 +17,9 @@ import {
   BoolOption,
   Box,
   Button,
+  Chart,
   ChartData,
-  ChartPopup,
+  ChartPopup, delayedExecutor,
   DeleteButton,
   doUpload,
   EnumInput,
@@ -36,6 +37,7 @@ import {
 } from "./utilities/ui-components"
 import {ErrorsForPath, errorsForSubpath} from "./utilities/errors"
 import {modifiedCopyOf, Update} from "./utilities/common"
+import {isEqual} from "lodash"
 
 export class FiltersTab extends React.Component<
     {
@@ -141,7 +143,7 @@ export class FiltersTab extends React.Component<
   }
 
   private closePopup() {
-    this.setState({ popupVisible: false })
+    this.setState({popupVisible: false})
   }
 
   private updateAvailableCoeffFiles() {
@@ -155,7 +157,7 @@ export class FiltersTab extends React.Component<
 
   render() {
     let {filters, errors} = this.props
-    return <div className="tabpanel">
+    return <div className="tabpanel" style={{width: '700px'}}>
       <ErrorMessage message={errors({path: []})}/>
       {this.filterNames()
           .map(name =>
@@ -202,7 +204,7 @@ interface FilterDefaults {
   errors?: string[]
 }
 
-class FilterView extends React.Component<{
+interface FilterViewProps {
   name: string
   filter: Filter
   errors: ErrorsForPath
@@ -214,12 +216,17 @@ class FilterView extends React.Component<{
   plot: () => void
   updateAvailableCoeffFiles: () => void
   coeffDir: string
-}, {
+}
+
+interface FilterViewState {
   uploadState?: { success: true } | { success: false, message: string }
   popupOpen: boolean
+  data?: ChartData
   filterDefaults: FilterDefaults
   showDefaults: boolean
-} > {
+}
+
+class FilterView extends React.Component<FilterViewProps, FilterViewState> {
 
   constructor(props: any) {
     super(props)
@@ -227,10 +234,14 @@ class FilterView extends React.Component<{
     this.pickFilterFile = this.pickFilterFile.bind(this)
     this.updateDefaults = this.updateDefaults.bind(this)
     this.updateFilterParamsWithDefaults = this.updateFilterParamsWithDefaults.bind(this)
+    this.plotFilter = this.plotFilter.bind(this)
     this.state = {popupOpen: false, showDefaults: false, filterDefaults: {}}
     if (isConvolutionFileFilter(this.props.filter))
       this.updateDefaults(this.props.filter.parameters.filename)
+    this.plotFilter()
   }
+
+  private timer = delayedExecutor(500)
 
   private uploadCoeffs(e: React.ChangeEvent<HTMLInputElement>) {
     doUpload('coeff', e,
@@ -277,6 +288,30 @@ class FilterView extends React.Component<{
       }
       if (channel) filter.parameters.channel = channel
     })
+  }
+
+  componentDidUpdate(prevProps: Readonly<FilterViewProps>, prevState: Readonly<FilterViewState>, snapshot?: any) {
+    const prevFilter = prevProps.filter
+    const currentFilter = this.props.filter
+    if (prevFilter.type !== currentFilter.type || !isEqual(prevFilter.parameters, currentFilter.parameters))
+      this.timer(() => this.plotFilter())
+  }
+
+  private plotFilter(samplerate?: number, channels?: number) {
+    fetch("/api/evalfilter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", },
+      body: JSON.stringify({
+        name: this.props.name,
+        config: this.props.filter,
+        samplerate: 44100, //samplerate || this.props.samplerate, TODO
+        channels: 2, //channels || this.props.channels, TODO
+      }),
+    }).then(
+        result => result.json()
+            .then(data => this.setState({data: data as ChartData})),
+        error => console.log("Failed", error)
+    )
   }
 
   render() {
@@ -344,6 +379,9 @@ class FilterView extends React.Component<{
           onClose={() => this.setState({popupOpen: false})}
           onSelect={this.pickFilterFile}
       />
+      {this.state.data ?
+          <Chart data={this.state.data} onChange={optionName => this.plotFilter()}/>
+          : <div/>}
     </Box>
   }
 }
