@@ -226,6 +226,9 @@ interface FilterViewState {
   showDefaults: boolean
 }
 
+const inlineFilterPlot = true
+// const inlineFilterPlot = false
+
 class FilterView extends React.Component<FilterViewProps, FilterViewState> {
 
   constructor(props: any) {
@@ -291,6 +294,8 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
   }
 
   componentDidUpdate(prevProps: Readonly<FilterViewProps>, prevState: Readonly<FilterViewState>, snapshot?: any) {
+    if (!inlineFilterPlot)
+      return
     const prevFilter = prevProps.filter
     const currentFilter = this.props.filter
     if (prevFilter.type !== currentFilter.type || !isEqual(prevFilter.parameters, currentFilter.parameters))
@@ -379,7 +384,7 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
           onClose={() => this.setState({popupOpen: false})}
           onSelect={this.pickFilterFile}
       />
-      {this.state.data ?
+      {inlineFilterPlot && this.state.data ?
           <Chart data={this.state.data} onChange={optionName => this.plotFilter()}/>
           : <div/>}
     </Box>
