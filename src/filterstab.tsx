@@ -19,7 +19,7 @@ import {
   Button,
   Chart,
   ChartData,
-  ChartPopup, delayedExecutor,
+  delayedExecutor,
   DeleteButton,
   doUpload,
   EnumInput,
@@ -49,8 +49,6 @@ export class FiltersTab extends React.Component<
       errors: ErrorsForPath
     },
     {
-      popupVisible: boolean
-      data: ChartData
       filterKeys: { [name: string]: number}
       availableCoeffFiles: string[]
     }
@@ -63,17 +61,8 @@ export class FiltersTab extends React.Component<
     this.renameFilter = this.renameFilter.bind(this)
     this.isFreeFilterName = this.isFreeFilterName.bind(this)
     this.updateFilter = this.updateFilter.bind(this)
-    this.plotFilter = this.plotFilter.bind(this)
-    this.closePopup = this.closePopup.bind(this)
     this.updateAvailableCoeffFiles = this.updateAvailableCoeffFiles.bind(this)
     this.state = {
-      popupVisible: false,
-      data: {
-        name: "",
-        f: [],
-        time: [],
-        options: [{name: ""}]
-      },
       filterKeys: {},
       availableCoeffFiles: []
     }
@@ -125,27 +114,6 @@ export class FiltersTab extends React.Component<
     this.props.updateConfig(config => update(config.filters[name]))
   }
 
-  private plotFilter(name: string, samplerate?: number, channels?: number) {
-    fetch("/api/evalfilter", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", },
-      body: JSON.stringify({
-        name: name,
-        config: this.props.filters[name],
-        samplerate: samplerate || this.props.samplerate,
-        channels: channels || this.props.channels,
-      }),
-    }).then(
-      result => result.json()
-          .then(data => this.setState({popupVisible: true, data: data})),
-      error => console.log("Failed", error)
-    )
-  }
-
-  private closePopup() {
-    this.setState({popupVisible: false})
-  }
-
   private updateAvailableCoeffFiles() {
     fetch("/api/storedcoeffs")
         .then(
@@ -171,23 +139,13 @@ export class FiltersTab extends React.Component<
                   rename={newName => this.renameFilter(name, newName)}
                   isFreeFilterName={this.isFreeFilterName}
                   remove={() => this.removeFilter(name)}
-                  plot={() => this.plotFilter(name)}
                   updateAvailableCoeffFiles={this.updateAvailableCoeffFiles}
                   coeffDir={this.props.coeffDir}
+                  samplerate={this.props.samplerate}
+                  channels={this.props.channels}
               />
           )}
       <AddButton tooltip="Add a new filter" onClick={this.addFilter}/>
-      <ChartPopup
-        key={'plot-filter-popup'}
-        open={this.state.popupVisible}
-        data={this.state.data}
-        onChange={file => {
-          const options = this.state.data.options
-          const current = options.length === 0 ? undefined : options.filter(o => o.name === file)[0]
-          this.plotFilter(this.state.data.name, current?.samplerate, current?.channels)
-        }}
-        onClose={this.closePopup}
-      />
     </div>
   }
 }
@@ -213,21 +171,20 @@ interface FilterViewProps {
   rename: (newName: string) => void
   isFreeFilterName: (name: string) => boolean
   remove: () => void
-  plot: () => void
   updateAvailableCoeffFiles: () => void
   coeffDir: string
+  samplerate: number
+  channels: number
 }
 
 interface FilterViewState {
   uploadState?: { success: true } | { success: false, message: string }
-  popupOpen: boolean
+  filterFilePopupOpen: boolean
+  showFilterPlot: boolean
   data?: ChartData
   filterDefaults: FilterDefaults
   showDefaults: boolean
 }
-
-const inlineFilterPlot = true
-// const inlineFilterPlot = false
 
 class FilterView extends React.Component<FilterViewProps, FilterViewState> {
 
@@ -238,7 +195,12 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
     this.updateDefaults = this.updateDefaults.bind(this)
     this.updateFilterParamsWithDefaults = this.updateFilterParamsWithDefaults.bind(this)
     this.plotFilter = this.plotFilter.bind(this)
-    this.state = {popupOpen: false, showDefaults: false, filterDefaults: {}}
+    this.state = {
+      filterFilePopupOpen: false,
+      showFilterPlot: false,
+      showDefaults: false,
+      filterDefaults: {}
+    }
     if (isConvolutionFileFilter(this.props.filter))
       this.updateDefaults(this.props.filter.parameters.filename)
     this.plotFilter()
@@ -294,12 +256,12 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
   }
 
   componentDidUpdate(prevProps: Readonly<FilterViewProps>, prevState: Readonly<FilterViewState>, snapshot?: any) {
-    if (!inlineFilterPlot)
-      return
-    const prevFilter = prevProps.filter
-    const currentFilter = this.props.filter
-    if (prevFilter.type !== currentFilter.type || !isEqual(prevFilter.parameters, currentFilter.parameters))
-      this.timer(() => this.plotFilter())
+    if (this.state.showFilterPlot) {
+      const prevFilter = prevProps.filter
+      const currentFilter = this.props.filter
+      if (prevFilter.type !== currentFilter.type || !isEqual(prevFilter.parameters, currentFilter.parameters))
+        this.timer(() => this.plotFilter())
+    }
   }
 
   private plotFilter(samplerate?: number, channels?: number) {
@@ -309,12 +271,15 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
       body: JSON.stringify({
         name: this.props.name,
         config: this.props.filter,
-        samplerate: 44100, //samplerate || this.props.samplerate, TODO
-        channels: 2, //channels || this.props.channels, TODO
+        samplerate: samplerate || this.props.samplerate,
+        channels: channels || this.props.channels
       }),
     }).then(
         result => result.json()
-            .then(data => this.setState({data: data as ChartData})),
+            .then(data => {
+              if (this.state.showFilterPlot)
+                this.setState({data: data as ChartData})
+            }),
         error => console.log("Failed", error)
     )
   }
@@ -346,13 +311,20 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
           <MdiButton
               icon={mdiChartBellCurveCumulative}
               tooltip="Plot frequency response of this filter"
-              onClick={this.props.plot}/>
+              onClick={() => {
+                const showFilterPlot = !this.state.showFilterPlot
+                this.setState({showFilterPlot})
+                if (showFilterPlot)
+                  this.plotFilter()
+                else
+                  this.setState({data: undefined})
+              }}/>
           }
           {isConvolutionFileFilter(filter) &&
           <MdiButton
               icon={mdiFileSearch}
               tooltip="Pick filter file"
-              onClick={() => this.setState({popupOpen: true})}/>
+              onClick={() => this.setState({showFilterPlot: true})}/>
           }
           <DeleteButton tooltip={"Delete this filter"} onClick={this.props.remove}/>
         </div>
@@ -368,7 +340,7 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
       </div>
       <ListSelectPopup
           key="filter select popup"
-          open={this.state.popupOpen}
+          open={this.state.filterFilePopupOpen}
           header={
             <>
               <UploadButton
@@ -381,12 +353,19 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
             </>
           }
           items={this.props.availableCoeffFiles}
-          onClose={() => this.setState({popupOpen: false})}
+          onClose={() => this.setState({filterFilePopupOpen: false})}
           onSelect={this.pickFilterFile}
       />
-      {inlineFilterPlot && this.state.data ?
-          <Chart data={this.state.data} onChange={optionName => this.plotFilter()}/>
-          : <div/>}
+      {this.state.showFilterPlot && this.state.data ?
+          <Chart
+              data={this.state.data}
+              onChange={file => {
+                const options = this.state.data!!.options
+                const current = options.length === 0 ? undefined : options.filter(o => o.name === file)[0]
+                this.plotFilter(current?.samplerate, current?.channels)
+              }}
+          />
+          : null}
     </Box>
   }
 }

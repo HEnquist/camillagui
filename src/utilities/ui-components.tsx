@@ -544,6 +544,10 @@ export function delayedExecutor(delay: number): (action: Action) => void {
     }
 }
 
+export interface ChartPopupData {
+
+}
+
 export interface ChartData {
     name: string
     samplerate?: number
