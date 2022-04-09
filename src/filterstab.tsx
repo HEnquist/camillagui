@@ -194,6 +194,8 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
     this.pickFilterFile = this.pickFilterFile.bind(this)
     this.updateDefaults = this.updateDefaults.bind(this)
     this.updateFilterParamsWithDefaults = this.updateFilterParamsWithDefaults.bind(this)
+    this.toggleFilterPlot = this.toggleFilterPlot.bind(this)
+    this.plotFilterInitially = this.plotFilterInitially.bind(this)
     this.plotFilter = this.plotFilter.bind(this)
     this.state = {
       filterFilePopupOpen: false,
@@ -264,6 +266,21 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
     }
   }
 
+  private toggleFilterPlot() {
+    const showFilterPlot = !this.state.showFilterPlot
+    this.setState({showFilterPlot})
+    if (showFilterPlot)
+      this.plotFilter()
+    else
+      this.setState({data: undefined})
+  }
+
+  private plotFilterInitially(file: string) {
+    const options = this.state.data!!.options
+    const current = options.length === 0 ? undefined : options.filter(o => o.name === file)[0]
+    this.plotFilter(current?.samplerate, current?.channels)
+  }
+
   private plotFilter(samplerate?: number, channels?: number) {
     fetch("/api/evalfilter", {
       method: "POST",
@@ -311,14 +328,7 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
           <MdiButton
               icon={mdiChartBellCurveCumulative}
               tooltip="Plot frequency response of this filter"
-              onClick={() => {
-                const showFilterPlot = !this.state.showFilterPlot
-                this.setState({showFilterPlot})
-                if (showFilterPlot)
-                  this.plotFilter()
-                else
-                  this.setState({data: undefined})
-              }}/>
+              onClick={this.toggleFilterPlot}/>
           }
           {isConvolutionFileFilter(filter) &&
           <MdiButton
@@ -357,14 +367,7 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
           onSelect={this.pickFilterFile}
       />
       {this.state.showFilterPlot && this.state.data ?
-          <Chart
-              data={this.state.data}
-              onChange={file => {
-                const options = this.state.data!!.options
-                const current = options.length === 0 ? undefined : options.filter(o => o.name === file)[0]
-                this.plotFilter(current?.samplerate, current?.channels)
-              }}
-          />
+          <Chart data={this.state.data} onChange={this.plotFilterInitially}/>
           : null}
     </Box>
   }
