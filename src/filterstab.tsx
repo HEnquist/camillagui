@@ -334,7 +334,7 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
           <MdiButton
               icon={mdiFileSearch}
               tooltip="Pick filter file"
-              onClick={() => this.setState({showFilterPlot: true})}/>
+              onClick={() => this.setState({filterFilePopupOpen: true})}/>
           }
           <DeleteButton tooltip={"Delete this filter"} onClick={this.props.remove}/>
         </div>
