@@ -5,6 +5,7 @@ import {
   Box,
   DeleteButton,
   ErrorMessage,
+  FloatOption,
   IntOption,
   MdiButton,
   ParsedInput
@@ -264,11 +265,10 @@ function SourceView(props: {
             onChange={channel => update(source => source.channel = channel)}/>
       </div>
       <div style={{flexGrow: 1}}>
-        <IntOption
+        <FloatOption
             value={source.gain}
             desc="gain"
             data-tip="Gain in dB for this source channel"
-            small={true}
             onChange={gain => update(source => source.gain = gain)}/>
       </div>
       <MdiButton
