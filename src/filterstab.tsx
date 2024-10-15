@@ -7,7 +7,6 @@ import {
   defaultFilter,
   DefaultFilterParameters,
   Filter,
-  Filters,
   newFilterName,
   removeFilter,
   renameFilter,
@@ -30,7 +29,7 @@ import {
   FloatListOption,
   FloatOption,
   IntOption,
-  ListSelectPopup,
+  FileSelectPopup,
   MdiButton,
   OptionalBoolOption,
   OptionalTextOption,
@@ -44,7 +43,7 @@ import { ErrorsForPath, errorsForSubpath } from "./utilities/errors"
 import { modifiedCopyOf, Update } from "./utilities/common"
 import { isEqual } from "lodash"
 import { Chart, ChartData } from "./utilities/chart"
-import {doUpload, loadFilenames} from "./utilities/files"
+import {doUpload, loadFiles, FileInfo} from "./utilities/files"
 
 // TODO update conv parameters
 // TODO optional bool in general notch
@@ -53,16 +52,16 @@ import {doUpload, loadFilenames} from "./utilities/files"
 
 export class FiltersTab extends React.Component<
   {
-    filters: Filters
+    config: Config
     samplerate: number
-    channels: number
+    channels: Promise<number>
     coeffDir: string
     updateConfig: (update: Update<Config>) => void
     errors: ErrorsForPath
   },
   {
     filterKeys: { [name: string]: number }
-    availableCoeffFiles: string[]
+    availableCoeffFiles: FileInfo[]
     sortBy: string
     sortReverse: boolean
   }
@@ -91,7 +90,7 @@ export class FiltersTab extends React.Component<
   //private timer = delayedExecutor(2000)
 
   private filterNames(): string[] {
-    return sortedFilterNamesOf(this.props.filters, this.state.sortBy, this.state.sortReverse)
+    return sortedFilterNamesOf(this.props.config.filters, this.state.sortBy, this.state.sortReverse)
   }
 
   private changeSortBy(key: string) {
@@ -151,7 +150,7 @@ export class FiltersTab extends React.Component<
   }
 
   private updateAvailableCoeffFiles() {
-    loadFilenames("coeff")
+    loadFiles("coeff")
       .then(
         files => this.setState({ availableCoeffFiles: files }),
         error => console.log("Could not load stored coeffs", error)
@@ -159,29 +158,31 @@ export class FiltersTab extends React.Component<
   }
 
   render() {
-    let { filters, errors } = this.props
+    let { config, errors } = this.props
     return <div>
       <div className="horizontally-spaced-content" style={{ width: '700px' }}>
         <EnumOption
           value={this.state.sortBy}
           options={FilterSortKeys}
           desc="Sort filters by"
-          data-tip="Property used to sort filters"
+          tooltip="Property used to sort filters"
           onChange={this.changeSortBy} />
         <BoolOption
           value={this.state.sortReverse}
           desc="Reverse order"
-          data-tip="Reverse display order"
+          tooltip="Reverse display order"
           onChange={this.changeSortOrder} />
       </div>
-      <div className="tabpanel" style={{ width: '700px' }}>
+      <div className="tabcontainer">
+      <div className="tabpanel-with-header" style={{ width: '700px'}}>
         <ErrorMessage message={errors({ path: [] })} />
         {this.filterNames()
           .map(name =>
             <FilterView
               key={this.state.filterKeys[name]}
               name={name}
-              filter={filters[name]}
+              // @ts-ignore
+              filter={config.filters[name]}
               errors={errorsForSubpath(errors, name)}
               availableCoeffFiles={this.state.availableCoeffFiles}
               updateFilter={update => this.updateFilter(name, update)}
@@ -195,7 +196,7 @@ export class FiltersTab extends React.Component<
             />
           )}
         <AddButton tooltip="Add a new filter" onClick={this.addFilter} />
-      </div></div>
+      </div><div className="tabspacer"></div></div></div>
   }
 }
 
@@ -219,7 +220,7 @@ interface FilterViewProps {
   name: string
   filter: Filter
   errors: ErrorsForPath
-  availableCoeffFiles: string[]
+  availableCoeffFiles: FileInfo[]
   updateFilter: (update: Update<Filter>) => void
   rename: (newName: string) => void
   isFreeFilterName: (name: string) => boolean
@@ -227,7 +228,7 @@ interface FilterViewProps {
   updateAvailableCoeffFiles: () => void
   coeffDir: string
   samplerate: number
-  channels: number
+  channels: Promise<number>
 }
 
 interface FilterViewState {
@@ -238,6 +239,8 @@ interface FilterViewState {
   data?: ChartData
   filterDefaults: FilterDefaults
   showDefaults: boolean
+  channels: number
+  plot_at_volume: number
 }
 
 class FilterView extends React.Component<FilterViewProps, FilterViewState> {
@@ -250,6 +253,7 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
     this.updateFilterParamsWithDefaults = this.updateFilterParamsWithDefaults.bind(this)
     this.toggleFilterPlot = this.toggleFilterPlot.bind(this)
     this.toggleExpand = this.toggleExpand.bind(this)
+    this.setPlotVolume = this.setPlotVolume.bind(this)
     this.plotFilterInitially = this.plotFilterInitially.bind(this)
     this.plotFilter = this.plotFilter.bind(this)
 
@@ -258,7 +262,9 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
       showFilterPlot: false,
       expandPlot: false,
       showDefaults: false,
-      filterDefaults: {}
+      filterDefaults: {},
+      channels: 2,
+      plot_at_volume: 0.0
     }
     if (isConvolutionFileFilter(this.props.filter))
       this.updateDefaults(this.props.filter.parameters.filename)
@@ -314,11 +320,18 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
     })
   }
 
+  componentDidMount() {
+    this.props.channels.then(ch => {
+      console.log('channels', ch)
+      this.setState({ channels: ch })
+    })
+  }
+
   componentDidUpdate(prevProps: Readonly<FilterViewProps>, prevState: Readonly<FilterViewState>, snapshot?: any) {
     if (this.state.showFilterPlot) {
       const prevFilter = prevProps.filter
       const currentFilter = this.props.filter
-      if (prevFilter.type !== currentFilter.type || !isEqual(prevFilter.parameters, currentFilter.parameters))
+      if (prevFilter.type !== currentFilter.type || !isEqual(prevFilter.parameters, currentFilter.parameters) || this.state.plot_at_volume !== prevState.plot_at_volume)
         this.timer(() => this.plotFilter())
     }
   }
@@ -330,6 +343,10 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
       this.plotFilter()
     else
       this.setState({ data: undefined })
+  }
+
+  private setPlotVolume(volume: number) {
+    this.setState({ plot_at_volume: volume })
   }
 
   private toggleExpand() {
@@ -353,15 +370,18 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
         name: this.props.name,
         config: this.props.filter,
         samplerate: samplerate || this.props.samplerate,
-        channels: channels || this.props.channels
+        channels: channels || this.state.channels,
+        volume: this.state.plot_at_volume
       }),
     }).then(
       result => result.json()
         .then(data => {
           if (this.state.showFilterPlot)
             this.setState({ data: data as ChartData })
-        }),
-      error => console.log("Failed", error)
+        },
+        error => console.log("JSON parse failed", error)
+      ),
+      error => console.log("api call failed", error)
     )
   }
 
@@ -374,18 +394,18 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
       { icon: mdiUpload }
     if (uploadState !== undefined && !uploadState.success)
       uploadIcon = { icon: mdiAlertCircle, className: 'error-text', errorMessage: uploadState.message }
-    return <Box title={
+    return <Box style={{width: '700px' }} title={
       <ParsedInput
         style={{ width: '300px' }}
         value={name}
         asString={x => x}
         parseValue={newName => isValidFilterName(newName) ? newName : undefined}
-        data-tip="Filter name, must be unique"
+        tooltip="Filter name, must be unique"
         onChange={newName => this.props.rename(newName)}
         immediate={false}
       />
     }>
-      <div style={{ display: 'flex', flexDirection: 'row' }}>
+      <div style={{ display: 'flex', flexDirection: 'row', width: '670px' }}>
         <div
           className="vertically-spaced-content"
           style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
@@ -413,31 +433,49 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
       </div>
 
 
-      <ListSelectPopup
+      <FileSelectPopup
         key="filter select popup"
         open={this.state.filterFilePopupOpen}
         header={
-          <>
+          <div style={{ margin: '5px', display: 'flex', flexDirection: 'column'}}>
+            <span>Select a file containing filter coefficients.</span>
+            <span>For Raw filters, only single channel files are supported.</span>
             <UploadButton
               icon={uploadIcon.icon}
               className={uploadIcon.className}
               tooltip={uploadIcon.errorMessage ? uploadIcon.errorMessage : "Upload filter files"}
               upload={this.uploadCoeffs}
               multiple={true} />
-            <div style={{ margin: '10px 0' }}>For Raw filters, only single channel files are supported.</div>
-          </>
+          </div>
         }
-        items={this.props.availableCoeffFiles}
+        files={this.props.availableCoeffFiles}
         onClose={() => this.setState({ filterFilePopupOpen: false })}
         onSelect={this.pickFilterFile}
       />
       {this.state.showFilterPlot && this.state.data ?
-        <div style={{ width: this.state.expandPlot && this.state.showFilterPlot ? '1200px' : '670px' }}>
+        <div style={{ width: this.state.expandPlot && this.state.showFilterPlot ? '1100px' : '670px' }}>
           <Chart data={this.state.data} onChange={this.plotFilterInitially} />
+          <div style={{ display: 'inline-flex', flexDirection: 'row'}}>
           <MdiButton
             icon={this.state.expandPlot ? mdiArrowCollapse : mdiArrowExpand}
             tooltip={this.state.expandPlot ? "Collapse plot" : "Expand plot"}
-            onClick={this.toggleExpand} /></div>
+            onClick={this.toggleExpand} />
+          {this.props.filter.type === "Loudness" ?
+            <div style={{ display: 'inline-flex', flexDirection: 'row', alignItems: 'center'}}>
+              <input
+                type="range"
+                min={-500}
+                max={200}
+                value={this.state.plot_at_volume * 10.0}
+                onBlur={e => this.setPlotVolume(e.target.valueAsNumber / 10.0)}
+                onChange={e => this.setPlotVolume(e.target.valueAsNumber / 10.0)}
+                data-tooltip-html="Volume setting to evaluate filter at"
+                data-tooltip-id="main-tooltip"
+              />
+              <div>{this.state.plot_at_volume} dB</div>
+            </div>
+          : null}
+          </div></div>
         : null}
     </Box>
   }
@@ -461,7 +499,7 @@ class FilterParams extends React.Component<{
   filter: Filter
   errors: ErrorsForPath
   updateFilter: (update: Update<Filter>) => void
-  availableCoeffFiles: string[]
+  availableCoeffFiles: FileInfo[]
   coeffDir: string
   filterDefaults: FilterDefaults
   setShowDefaults: () => void
@@ -564,7 +602,7 @@ class FilterParams extends React.Component<{
         error={errors({ path: ['type'] })}
         options={Object.keys(DefaultFilterParameters)}
         desc="type"
-        data-tip="Filter type"
+        tooltip="Filter type"
         onChange={this.onTypeChange} />
       {subtypeOptions[0] !== 'Default' &&
         <EnumOption
@@ -572,7 +610,7 @@ class FilterParams extends React.Component<{
           error={errors({ path: ['parameters', 'type'] })}
           options={subtypeOptions}
           desc="subtype"
-          data-tip="Filter subtype"
+          tooltip="Filter subtype"
           onChange={this.onSubtypeChange} />
       }
       <ErrorMessage message={errors({ path: ['parameters'] })} />
@@ -584,7 +622,7 @@ class FilterParams extends React.Component<{
         placeholder="none"
         value={filter.description}
         desc="description"
-        data-tip="Filter description"
+        tooltip="Filter description"
         onChange={this.onDescChange} />
       {isGraphicEqualizer(filter) &&
         <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center' }}>
@@ -624,7 +662,7 @@ class FilterParams extends React.Component<{
         value: parameters[parameter],
         error: errors({ path: [parameter] }),
         desc: info.desc,
-        'data-tip': info.tooltip,
+        tooltip: info.tooltip,
         //onChange: (value: any) => this.timer(() => this.props.updateFilter(filter => filter.parameters[parameter] = value))
         onChange: (value: any) => this.props.updateFilter(filter => filter.parameters[parameter] = value)
       }
@@ -674,7 +712,7 @@ class FilterParams extends React.Component<{
     filename: string,
     props: {
       onChange: (value: any) => void
-      "data-tip": string
+      "tooltip": string
       value: any
       key: string
       desc: string
@@ -829,6 +867,11 @@ class FilterParams extends React.Component<{
         desc: "length",
         tooltip: "Number of coefficients to generate",
       },
+      limit: {
+        type: "optional_float",
+        desc: "limit",
+        tooltip: "Volume upper limit in dB",
+      },
       low_boost: {
         type: "float",
         desc: "low_boost",
@@ -850,7 +893,7 @@ class FilterParams extends React.Component<{
       q_p: { type: "float", desc: "Q pole", tooltip: "Pole Q-value" },
       q_target: { type: "float", desc: "Q target", tooltip: "Target Q-value" },
       ramp_time: {
-        type: "float",
+        type: "optional_float",
         desc: "ramp_time",
         tooltip: "Volume change ramp time in ms",
       },
@@ -919,7 +962,7 @@ class FilterParams extends React.Component<{
     desc: string
     value: number
     error?: string
-    'data-tip': string
+    tooltip: string
     onDescChange: (option: string) => void
     onChange: (value: number) => void
   }) {
@@ -932,20 +975,20 @@ class FilterParams extends React.Component<{
     else
       return <ErrorMessage message={error} />
     return <>
-      <label className="setting" style={{ textAlign: 'right' }} data-tip={props['data-tip']}>
+      <label className="setting" style={{ textAlign: 'right' }} data-tooltip-html={props.tooltip}>
         <EnumInput
           value={parameter}
           options={descOptions}
           desc={desc}
           style={{ display: 'table-cell', width: 'min-content', textAlign: 'right', marginRight: '5px' }}
-          data-tip={props["data-tip"]}
+          tooltip={props.tooltip}
           onChange={onDescChange} />
         <FloatInput
           className="setting-input"
           error={error !== undefined}
           value={value}
           style={{ width: '55%' }}
-          data-tip={props["data-tip"]}
+          tooltip={props.tooltip}
           onChange={onChange} />
         <ErrorMessage message={error} />
       </label>

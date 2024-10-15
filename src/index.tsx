@@ -1,6 +1,7 @@
 /* The CSS files have to be imported in exactly this order.
    Otherwise the custom react-tabs styles in index.css don't work */
 import "react-tabs/style/react-tabs.css"
+import 'react-tooltip/dist/react-tooltip.css'
 import "./index.css"
 
 import * as React from "react"
@@ -15,9 +16,9 @@ import {TitleTab} from "./titletab"
 import {Shortcuts} from "./shortcuts"
 import {ErrorsForPath, errorsForSubpath, noErrors} from "./utilities/errors"
 import {Tab, TabList, TabPanel, Tabs} from "react-tabs"
-import ReactTooltip from "react-tooltip"
+import {Tooltip} from 'react-tooltip'
 import {Files} from "./filestab"
-import {Config, defaultConfig} from "./camilladsp/config"
+import {Config, defaultConfig, getCaptureChannelCount} from "./camilladsp/config"
 import {defaultGuiConfig, GuiConfig} from "./guiconfig"
 import {delayedExecutor, MdiButton, MdiIcon} from "./utilities/ui-components"
 import {cloneDeep} from "lodash"
@@ -27,6 +28,7 @@ import {Update} from "./utilities/common"
 import {CompactView, isCompactViewEnabled, setCompactViewEnabled} from "./compactview"
 import {UndoRedo} from "./main/UndoRedo"
 import {loadActiveConfig} from "./utilities/files"
+import { createTheme } from 'react-data-table-component'
 
 class CamillaConfig extends React.Component<
   unknown,
@@ -70,6 +72,32 @@ class CamillaConfig extends React.Component<
     }
     this.loadGuiConfig()
     this.loadCurrentConfig()
+    createTheme(
+      'camilla',
+      {
+          text: {
+              primary: 'var(--text-color)',
+              secondary: 'var(--text-color)',
+          },
+          background: {
+              default: 'var(--background-color)',
+          },
+          context: {
+              background: '#cb4b16',
+              text: '#FFFFFF',
+          },
+          divider: {
+              default: 'var(--box-border-color)',
+          },
+          highlightOnHover: {
+              default: 'var(--active-button-background-color)'
+          },
+          sortFocus: {
+              default: 'var(--success-text-color)',
+          },
+      },
+      'dark',
+  )
   }
 
   private async loadGuiConfig() {
@@ -201,7 +229,7 @@ class CamillaConfig extends React.Component<
   }
 
   componentDidUpdate(prevProps: unknown) {
-    ReactTooltip.rebuild()
+    //ReactTooltip.rebuild()
   }
 
   private switchTab(index: number) {
@@ -210,7 +238,7 @@ class CamillaConfig extends React.Component<
 
   render() {
     return <div className="configapp">
-      <ReactTooltip multiline={true}/>
+      <Tooltip id="main-tooltip" className="tooltip"/>
       {this.state.compactView ?
           <CompactView
               currentConfigName={this.state.currentConfigFile}
@@ -297,9 +325,9 @@ class CamillaConfig extends React.Component<
         </TabPanel>
         <TabPanel>
           <FiltersTab
-              filters={config.filters ? config.filters : {}}
+              config={config}
               samplerate={config.devices.samplerate}
-              channels={config.devices.capture.channels}
+              channels={getCaptureChannelCount(config)}
               coeffDir={this.state.guiConfig.coeff_dir}
               updateConfig={this.updateConfig}
               errors={errorsForSubpath(errors, 'filters')}
@@ -307,16 +335,16 @@ class CamillaConfig extends React.Component<
         </TabPanel>
         <TabPanel>
           <MixersTab
-              mixers={config.mixers ? config.mixers : {}}
+              config={config}
               updateConfig={this.updateConfig}
               errors={errorsForSubpath(errors, 'mixers')}
           />
         </TabPanel>
         <TabPanel>
           <ProcessorsTab
-              processors={config.processors ? config.processors : {}}
+              config={config}
               updateConfig={this.updateConfig}
-              errors={errorsForSubpath(errors, 'mixers')}
+              errors={errorsForSubpath(errors, 'processors')}
           />
         </TabPanel>
         <TabPanel>

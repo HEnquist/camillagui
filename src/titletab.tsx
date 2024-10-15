@@ -10,14 +10,14 @@ export function TitleTab(props: {
     config: Config,
     updateConfig: (update: Update<Config>) => void
   }) {
-    return <div className="tabpanel" style={{width: '700px'}}>
+    return <div className="tabcontainer"><div className="tabpanel" style={{width: '700px'}}>
       <Title
           config={props.config}
           onChange={props.updateConfig}/>
         <Description
           config={props.config}
           onChange={props.updateConfig}/>
-    </div>
+    </div><div className="tabspacer"></div></div>
   }
 
 function Title(props: {
@@ -29,7 +29,7 @@ function Title(props: {
                 placeholder="none"
                 className="textbox"
                 value={props.config.title === null ? "": props.config.title}
-                data-tip="Optional title for the configuration"
+                tooltip="Optional title for the configuration"
                 onChange={title => title === "" ? props.onChange(config => { config.title = null }) : props.onChange(config => { config.title = title })} 
                 />
     </Box>
@@ -45,7 +45,7 @@ function Description(props: {
                 className="textbox"
                 rows={10}
                 value={props.config.description === null ? "": props.config.description}
-                data-tip="Optoional description for the configuration"
+                tooltip="Optional description for the configuration"
                 onChange={desc => desc === "" ? props.onChange(config => { config.description = null }) : props.onChange(config => { config.description = desc })} 
                 />
     </Box>
