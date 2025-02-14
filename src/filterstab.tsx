@@ -328,7 +328,6 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
 
   componentDidMount() {
     this.props.channels.then(ch => {
-      console.log('channels', ch)
       this.setState({ channels: ch })
     })
   }
@@ -934,7 +933,7 @@ class FilterParams extends React.Component<{
       unit: {
         type: "enum",
         desc: "unit",
-        options: ["ms", "samples"],
+        options: ["ms", "us", "mm", "samples"],
         tooltip: "Unit for delay",
       },
       values: {
