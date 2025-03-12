@@ -351,7 +351,7 @@ class PipelinePlot extends React.Component<Props, State> {
     }
     for (let n = 0; n < active_channels; n++) {
       const labels = cap_params.labels
-      channel_labels.push(getLabelForChannel(labels, n))
+      channel_labels.push(getLabelForChannel(labels, n, true, false))
     }
     for (let n = 0; n < active_channels; n++) {
       var label = channel_labels[n]
@@ -472,7 +472,7 @@ class PipelinePlot extends React.Component<Props, State> {
         )
         channel_labels = []
         for (let n = 0; n < mixconf.channels.out; n++) {
-          label = getLabelForChannel(mixconf.labels, n)
+          label = getLabelForChannel(mixconf.labels, n, true, false)
           channel_labels.push(label)
         }
         for (let m = 0; m < mixconf.channels.out; m++) {
@@ -531,7 +531,7 @@ class PipelinePlot extends React.Component<Props, State> {
         for (let m = 0; m < active_channels; m++) {
           procchannels.push([])
           let label = m.toString()
-          if (procconf.type === "Compressor") {
+          if (procconf.type === "Compressor" || procconf.type === "NoiseGate") {
             const is_m = procconf.parameters.monitor_channels === null || procconf.parameters.monitor_channels.includes(m)
             const is_p = procconf.parameters.process_channels === null || procconf.parameters.process_channels.includes(m)
             if (is_m && is_p) {
@@ -542,6 +542,17 @@ class PipelinePlot extends React.Component<Props, State> {
             }
             else if (is_p) {
               label = label + ": P"
+            }
+            else {
+              label = label + ": pass"
+            }
+          }
+          if (procconf.type === "RACE") {
+            if (procconf.parameters.channel_a === m) {
+              label = label + ": A"
+            }
+            else if (procconf.parameters.channel_b === m) {
+              label = label + ": B"
             }
             else {
               label = label + ": pass"
@@ -827,7 +838,6 @@ class PipelinePlot extends React.Component<Props, State> {
         const tt_node = this.tooltip.node()
         const tt_width = tt_node ? tt_node.getBoundingClientRect().width : 0
         const tt_height = tt_node ? tt_node.getBoundingClientRect().height : 0
-        console.log(event.pageX, event.pageY)
         this.tooltip
           .style("left", event.pageX - tt_width / 2 + "px")
           .style("top", event.pageY - tt_height - 10 + "px")
