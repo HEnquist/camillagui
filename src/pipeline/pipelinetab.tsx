@@ -24,7 +24,8 @@ import {
   ProcessorStep,
 } from "../camilladsp/config"
 import { moveItem, moveItemDown, moveItemUp } from "../utilities/arrays"
-import { ChartContent, ChartPopup } from "../utilities/chart"
+import { ChartContent, FilterOption } from "../utilities/chart"
+import { SingleFilterChartPopup } from "../utilities/SingleFilterChart"
 import { Update } from "../utilities/common"
 import { DndContainer, DndSortable, DragHandle, useDndSort } from "../utilities/dragndrop"
 import { Errors } from "../utilities/errors"
@@ -226,12 +227,12 @@ export class PipelineTab extends React.Component<
                 onClose={() => this.setState({ plotPipeline: false })}
               />
               {this.state.plotFilterStep && (
-                <ChartPopup
+                <SingleFilterChartPopup
                   key={String(this.state.plotFilterStep)}
                   open={this.state.plotFilterStep}
                   data={this.state.data}
                   onChange={(name) => {
-                    const current = this.state.data.options.filter((o) => o.name === name)[0]
+                    const current = this.state.data.options.filter((o: FilterOption) => o.name === name)[0]
                     this.plotFilterStep(this.state.stepIndex!, current.samplerate, current.channels)
                   }}
                   onClose={() => this.setState({ plotFilterStep: false })}

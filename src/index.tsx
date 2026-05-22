@@ -12,7 +12,7 @@ import { createTheme } from "react-data-table-component"
 import { createRoot } from "react-dom/client"
 import { Tab, TabList, TabPanel, Tabs } from "react-tabs"
 import { Tooltip } from "react-tooltip"
-import { Config, defaultConfig, getCaptureDeviceChannelCount } from "./camilladsp/config"
+import { Config, defaultConfig, getCaptureDeviceChannelCount, Filter, defaultFilter, DefaultFilterParameters, Mixer, PipelineStep } from "./camilladsp/config"
 import { CompactView, isCompactViewEnabled, setCompactViewEnabled } from "./compactview"
 import { DevicesTab } from "./devicestab"
 import { Files } from "./filestab"
@@ -30,6 +30,113 @@ import { Errors, NoErrors } from "./utilities/errors"
 import { loadStartupConfig } from "./utilities/files"
 import { delayedExecutor, MdiButton, MdiIcon } from "./utilities/ui-components"
 
+// ===== Добавить в src/index.tsx (перед классом CamillaConfig) =====
+
+
+// ===== Заменить в src/index.tsx (удалить старую, вставить эту) =====
+
+const XOVER_MIXER_NAME = 'xover';
+
+const getKeyFilterName = (channelIndex: number, type: 'hpf' | 'lpf' | 'gain' | 'delay'): string => {
+    return `${XOVER_MIXER_NAME}_ch${channelIndex + 1}_${type}`;
+};
+
+/**
+ * Принимает конфигурацию и возвращает НОВУЮ, "достроенную" конфигурацию со структурой xover.
+ * Эта функция не изменяет оригинальный объект (является "чистой").
+ * @param originalConfig - Исходная конфигурация.
+ * @returns Новый объект конфигурации с гарантированно существующей структурой xover.
+ */
+// ===== Заменить в src/index.tsx (вся функция getEnsuredXoverConfig) =====
+const isKeyFilter = (filterName: string): boolean => {
+    return filterName.startsWith(`${XOVER_MIXER_NAME}_ch`);
+};
+
+
+function syncXoverStructure(originalConfig: Config): Config {
+    const config = cloneDeep(originalConfig);
+
+    // Гарантируем, что все ключевые секции являются массивами/объектами
+    if (!config.mixers) config.mixers = {};
+    if (!config.filters) config.filters = {};
+    if (!config.pipeline) config.pipeline = [];
+
+    // --- Шаг 1: Убедиться, что микшер xover существует в секции 'mixers' ---
+    let xoverMixer = Object.entries(config.mixers).find(([name, _]) => name.toLowerCase() === XOVER_MIXER_NAME)?.[1];
+    if (!xoverMixer) {
+        const newMixer: Mixer = { description: "Системный микшер", channels: { in: 2, out: 2 }, mapping: [ { dest: 0, sources: [{ channel: 0, gain: 0, scale: 'dB', inverted: false, mute: false }], mute: false }, { dest: 1, sources: [{ channel: 1, gain: 0, scale: 'dB', inverted: false, mute: false }], mute: false } ], labels: ["", ""] };
+        config.mixers[XOVER_MIXER_NAME] = newMixer;
+        xoverMixer = newMixer;
+    }
+    const channelCount = xoverMixer.channels.out;
+
+    // --- Шаг 2: НОВАЯ LОГИКА - Убедиться, что микшер xover есть в pipeline ---
+    const isXoverInPipeline = config.pipeline.some(step => step.type === 'Mixer' && step.name.toLowerCase() === XOVER_MIXER_NAME);
+    if (!isXoverInPipeline) {
+        // Если его нет, добавляем его в начало. Это критически важно!
+        config.pipeline.unshift({
+            type: 'Mixer',
+            name: XOVER_MIXER_NAME,
+            bypassed: null,
+            description: "Системный разделитель каналов"
+        });
+    }
+
+    // --- Шаг 3: Синхронизация фильтров и их шагов в pipeline ---
+    const newPipelineSteps: PipelineStep[] = [];
+    // 2. ДОБАВЛЯЕМ недостающие фильтры и шаги в pipeline
+    for (let i = 0; i < channelCount; i++) {
+        const hpfName = getKeyFilterName(i, 'hpf');
+        if (!config.filters[hpfName]) {
+            const hpf: Filter = { type: "BiquadCombo", description: `Системный ФВЧ ${i + 1}`, parameters: { ...DefaultFilterParameters.BiquadCombo.LinkwitzRileyHighpass, freq: 330, order: 2 } };
+            config.filters[hpfName] = hpf;
+            newPipelineSteps.push({ type: 'Filter', names: [hpfName], channels: [i], bypassed: null, description: null });
+        }
+
+        const lpfName = getKeyFilterName(i, 'lpf');
+        if (!config.filters[lpfName]) {
+            const lpf: Filter = { type: "BiquadCombo", description: `Системный ФНЧ ${i + 1}`, parameters: { ...DefaultFilterParameters.BiquadCombo.LinkwitzRileyLowpass, freq: 3300, order: 2 } };
+            config.filters[lpfName] = lpf;
+            newPipelineSteps.push({ type: 'Filter', names: [lpfName], channels: [i], bypassed: null, description: null });
+        }
+
+        const delayName = getKeyFilterName(i, 'delay');
+        if (!config.filters[delayName]) {
+            const delay: Filter = { type: "Delay", description: `Системная задержка ${i + 1}`, parameters: { ...DefaultFilterParameters.Delay.Default } };
+            config.filters[delayName] = delay;
+            newPipelineSteps.push({ type: 'Filter', names: [delayName], channels: [i], bypassed: null, description: null });
+        }
+
+        const gainName = getKeyFilterName(i, 'gain');
+        if (!config.filters[gainName]) {
+            const gain: Filter = { type: "Gain", description: `Системное усиление ${i + 1}`, parameters: { ...DefaultFilterParameters.Gain.Default } };
+            config.filters[gainName] = gain;
+            newPipelineSteps.push({ type: 'Filter', names: [gainName], channels: [i], bypassed: null, description: null });
+        }
+    }
+
+    // 3. Добавляем все новые шаги в конец существующего pipeline
+    if (newPipelineSteps.length > 0) {
+        config.pipeline.push(...newPipelineSteps);
+    }
+
+    const allFilterNames = Object.keys(config.filters);
+    for (const filterName of allFilterNames) {
+        if (isKeyFilter(filterName)) {
+            const channelMatch = filterName.match(/_ch(\d+)_/);
+            if (channelMatch) {
+                const filterChannelIndex = parseInt(channelMatch[1], 10) - 1;
+                if (filterChannelIndex >= channelCount) {
+                    delete config.filters[filterName];
+                    config.pipeline = config.pipeline.filter(step => !(step.type === 'Filter' && step.names.includes(filterName)));
+                }
+            }
+        }
+    }
+
+    return config;
+}
+
 class CamillaConfig extends React.Component<
   unknown,
   {
@@ -42,6 +149,7 @@ class CamillaConfig extends React.Component<
     message: string
     unsavedChanges: boolean
     unappliedChanges: boolean
+    activeChannelTab: number | 'common'
   }
 > {
   constructor(props: unknown) {
@@ -60,17 +168,19 @@ class CamillaConfig extends React.Component<
     this.saveNotify = this.saveNotify.bind(this)
     this.applyNotify = this.applyNotify.bind(this)
     this.state = {
-      activetab: 1,
+      activetab: 3, // Или 3, если хотите, чтобы вкладка Фильтры открывалась по умолчанию
+      activeChannelTab: 0,
       guiConfig: defaultGuiConfig(),
-      undoRedo: new UndoRedo(defaultConfig()),
+      undoRedo: new UndoRedo(defaultConfig()), // <-- Возвращаем пустой конфиг по умолчанию
       errors: NoErrors,
       compactView: isCompactViewEnabled(),
       message: "",
       unsavedChanges: false,
       unappliedChanges: true,
-    }
-    this.loadGuiConfig()
-    this.loadConfigAtStart()
+    };
+
+    this.loadGuiConfig();
+    this.loadConfigAtStart(); // Эта функция теперь будет работать для "боевого" режима
     createTheme(
       "camilla",
       {
@@ -115,10 +225,16 @@ class CamillaConfig extends React.Component<
       )
   }
 
-  private async loadConfigAtStart() {
+private async loadConfigAtStart() {
     try {
-      const json = await loadStartupConfig()
-      this.setCurrentConfig(json.configFileName ? json.configFileName : undefined, json.config)
+      // 1. Загружаем активный конфиг с бэкенда
+      const json = await loadStartupConfig();
+
+      // 2. "Достраиваем" его нашей функцией (это остается!)
+      const ensuredConfig = syncXoverStructure(json.config);
+
+      // 3. Устанавливаем как текущий
+      this.setCurrentConfig(json.configFileName ? json.configFileName : undefined, ensuredConfig);
       let message = ""
       if (json.source === "dsp") {
         message = "Loaded from DSP"
@@ -128,9 +244,10 @@ class CamillaConfig extends React.Component<
         message = "Loaded default"
       }
 
-      this.setState({ message: message })
+      this.setState({ message: message });
     } catch (err) {
-      console.log("Failed getting active config:", err)
+      // Просто логируем ошибку, если бэкенд недоступен
+      console.log("Failed to get active config from backend:", err);
     }
   }
 
@@ -155,6 +272,12 @@ class CamillaConfig extends React.Component<
   private setCompactViewEnabled(enabled: boolean) {
     setCompactViewEnabled(enabled)
     this.setState({ compactView: enabled })
+  }
+
+private setActiveChannelTab = (tabIndex: number | 'common') => {
+    // Мы будем хранить только числовые индексы. 'common' сбросим на 0.
+    const indexToStore = typeof tabIndex === 'number' ? tabIndex : 0;
+    this.setState({ activeChannelTab: tabIndex });
   }
 
   private saveNotify() {
@@ -248,8 +371,28 @@ class CamillaConfig extends React.Component<
     this.setState({ errors: errors })
   }
 
-  componentDidUpdate() {
-    //ReactTooltip.rebuild()
+  componentDidUpdate(prevProps: unknown, prevState: { undoRedo: UndoRedo<Config> }) {
+    const prevConfig = prevState.undoRedo.current();
+    const currentConfig = this.state.undoRedo.current();
+
+    const prevXover = Object.entries(prevConfig.mixers || {}).find(([name, _]) => name.toLowerCase() === XOVER_MIXER_NAME)?.[1];
+    const currentXover = Object.entries(currentConfig.mixers || {}).find(([name, _]) => name.toLowerCase() === XOVER_MIXER_NAME)?.[1];
+
+    if (!currentXover) {
+        return;
+    }
+
+    const prevChannels = prevXover ? prevXover.channels.out : -1;
+    const currentChannels = currentXover.channels.out;
+
+    if (prevChannels !== currentChannels) {
+        console.log(`Количество каналов Xover изменилось с ${prevChannels} на ${currentChannels}. Запускаю синхронизацию...`);
+        const syncedConfig = syncXoverStructure(currentConfig);
+        this.setState(prevState => ({
+            undoRedo: prevState.undoRedo.changeTo(syncedConfig)
+        }));
+    }
+
     document.title = this.state.guiConfig.page_title
   }
 
@@ -367,10 +510,19 @@ class CamillaConfig extends React.Component<
               coeffDir={this.state.guiConfig.coeff_dir}
               updateConfig={this.updateConfig}
               errors={errors.forSubpath("filters")}
+              activeChannelTab={this.state.activeChannelTab}
+              onChannelTabChange={this.setActiveChannelTab}
             />
           </TabPanel>
           <TabPanel>
-            <MixersTab config={config} updateConfig={this.updateConfig} errors={errors.forSubpath("mixers")} />
+            <MixersTab config={config} updateConfig={this.updateConfig} errors={errors.forSubpath("mixers")}
+              syncXover={(currentConfig) => {
+                const syncedConfig = syncXoverStructure(currentConfig);
+                this.setState(prevState => ({
+                    undoRedo: prevState.undoRedo.changeTo(syncedConfig)
+                }));
+              }}
+            />
           </TabPanel>
           <TabPanel>
             <ProcessorsTab config={config} updateConfig={this.updateConfig} errors={errors.forSubpath("processors")} />

@@ -585,6 +585,9 @@ export function removeFilter(config: Config, name: string) {
 }
 
 export function renameFilter(config: Config, oldName: string, newName: string) {
+  if (oldName === newName) {
+    return
+  }
   if (filterNamesOf(config).includes(newName)) throw new Error(`Filter '${newName}' already exists`)
   if (config.filters) {
     config.filters[newName] = config.filters[oldName]

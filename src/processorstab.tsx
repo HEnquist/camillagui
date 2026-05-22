@@ -215,7 +215,6 @@ class ProcessorView extends React.Component<ProcessorViewProps, ProcessorViewSta
             parseValue={(newName) => (isValidProcessorName(newName) ? newName : undefined)}
             tooltip="Processor name, must be unique"
             onChange={(newName) => this.props.rename(newName)}
-            immediate={false}
           />
         }
       >

@@ -57,6 +57,7 @@ interface MixersTabProps {
   config: Config
   updateConfig: (update: Update<Config>) => void
   errors: Errors
+  syncXover: (config: Config) => void
 }
 
 export class MixersTab extends React.Component<
@@ -151,6 +152,8 @@ export class MixersTab extends React.Component<
                 isFreeMixerName={this.isFreeMixerName}
                 rename={(newName) => this.renameMixer(name, newName)}
                 remove={() => this.removeMixer(name)}
+                updateConfig={this.props.updateConfig}
+                syncXover={this.props.syncXover}
               />
             ))}
             <div>
@@ -173,6 +176,8 @@ function MixerView(props: {
   rename: (newName: string) => void
   remove: () => void
   update: (update: Update<Mixer>) => void
+  updateConfig: (update: Update<Config>) => void
+  syncXover: (config: Config) => void
 }) {
   const { name, mixer, config, errors, rename, remove, update } = props
   const isValidMixerName = (newName: string) =>
@@ -201,7 +206,6 @@ function MixerView(props: {
             onChange={rename}
             asString={(name) => name}
             parseValue={(name) => (isValidMixerName(name) ? name : undefined)}
-            immediate={false}
           />
           <DeleteButton tooltip="Delete this mixer" smallButton={true} onClick={remove} />
         </>
@@ -233,7 +237,6 @@ function MixerView(props: {
           onChange={(channelsOut) =>
             update((mixer) => {
               mixer.channels.out = channelsOut
-              pruneMixer(mixer)
             })
           }
         />

@@ -1,4 +1,12 @@
 /* For available CSS variables see public/css-variables.css */
+/*#root {
+zoom: 0.5;
+transform: scale(0.5);
+width: 200%;
+height: 200%;
+transform-origin: 0 0;
+}
+*/
 
 body {
   color: var(--text-color);
@@ -11,6 +19,11 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size:1.2em;
+transform: scale(0.5);
+width: 200%;
+height: 200%;
+transform-origin: 0 0;
 }
 
 hr {
@@ -31,6 +44,8 @@ input:not([type='checkbox']), select {
   border: var(--input-border);
   height: 28px;
   padding: 0 4px;
+  font-size: 1em;
+  text-align: center;
 }
 
 input:not([type='checkbox']):focus, select:focus {
@@ -95,7 +110,7 @@ textarea.logfileviewer {
   align-items: flex-start;
   overflow-y: auto;
   overflow-x: hidden;
-  height: 95vh;
+/*  height: 95vh; */
   width: 320px;
   min-width: 320px;
 }
@@ -115,7 +130,7 @@ textarea.logfileviewer {
 
 .tabcontainer {
   width: 100%;
-  overflow-y: auto;
+  /* overflow-y: auto; */
 }
 
 .tabspacer {
@@ -175,17 +190,18 @@ textarea.logfileviewer {
 
 .setting {
   box-sizing: border-box;
-  display: table;
+  display: flex;
   width: 100%;
-  height: 28px;
+  min-height: 28px;
   text-align: left;
 }
 
-.setting-label {
-  display: table-cell;
-  width: 45%;
-  text-align: right;
-  border-right: 5px solid transparent;
+.setting-input {
+  display: block;
+  flex-grow: 1;
+  width: auto;
+  min-width: 50px;
+  vertical-align: middle;
 }
 
 .setting-label-wide {
@@ -196,7 +212,7 @@ textarea.logfileviewer {
 }
 
 .setting-input {
-  display: table-cell;
+  display: block;
   width: 100%;
   vertical-align: middle;
 }
@@ -244,6 +260,7 @@ textarea.logfileviewer {
   border-radius: var(--border-radius);
   border: var(--box-border);
   padding: 5px 12px 12px 12px;
+  background-color: var(--button-background-color);
 }
 
 div .popup-content {
@@ -488,6 +505,7 @@ div .popup-content {
   width: 36px;
   height: 36px;
   color: var(--button-icon-color);
+  scale: 1;
 }
 
 .smallbutton {
@@ -640,6 +658,7 @@ div .popup-content {
   opacity: 1 !important;
   font-size: smaller;
   z-index: 1000;
+  display:none;
 }
 
 .tooltip {
@@ -670,4 +689,314 @@ div .popup-content {
   margin-right: 4px;
   margin-left: 2px;
   vertical-align: middle;
+}
+
+
+
+
+/* ===== Стили для оптимизации стандартного блока фильтра ===== */
+
+/* --- 1. Основной контейнер FilterView --- */
+.filter-view-container {
+    display: flex;
+    flex-direction: column; /* Располагаем контент и кнопки друг под другом */
+    gap: 8px; /* Расстояние между блоками */
+    width: 100%; /* Занимает всю ширину родителя (например, .additional-filter-item) */
+}
+
+/* --- 2. Контейнер для параметров (Type, Subtype, freq, Q и т.д.) --- */
+.filter-params-container {
+    display: flex;
+    flex-direction: column;
+    gap: 5px; /* Расстояние между полями ввода */
+    width: 100%;
+}
+
+/* --- 3. Контейнер для кнопок управления (График, Удалить и т.д.) --- */
+.filter-controls-container {
+    display: flex;
+    flex-direction: row; /* Кнопки в ряд */
+    justify-content: flex-end; /* Прижимаем кнопки к правому краю */
+    gap: 5px;
+    padding-top: 5px;
+    border-top: var(--box-border); /* Линия-разделитель над кнопками */
+    width: 100%;
+}
+
+/* --- 4. Адаптация полей ввода для узкого блока --- */
+/* Этот класс мы будем использовать для фильтров в горизонтальном ряду */
+.narrow-filter-view .setting {
+    display: flex;
+    flex-direction: column; /* Лейбл над полем ввода */
+    align-items: flex-start;
+    height: auto; /* Высота автоматическая */
+    gap: 2px;
+}
+
+.narrow-filter-view .setting-label {
+    width: 100%;
+    text-align: left; /* Лейбл слева */
+    font-size: 0.8em;
+    color: var(--disabled-text-color);
+    border-right: none;
+}
+
+.narrow-filter-view .setting-input {
+    width: 100%;
+}
+
+/* Добавляем имена для безымянных контейнеров */
+.horizontally-spaced-content {
+    /* Уже существует, просто для справки */
+}
+.vertically-spaced-content {
+    /* Уже существует, просто для справки */
+}
+
+
+
+
+.sidepanel img {
+    height: auto;
+}
+
+
+/* ===== Стили для нового многоканального интерфейса (Версия 2) ===== */
+
+/* --- 1. Контейнер для всех контрол-табов --- */
+.channel-tabs-container {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+
+}
+
+/* --- 2. Стиль для одного контрол-таба --- */
+.channel-tab-button {
+    background-color: #141d25;
+    /*border: var(--button-border); */
+    border-radius: var(--border-radius);
+    padding: 8px;
+    cursor: pointer;
+    transition: all 0.0s ease-in-out;
+    width: 180px; /* Задаем ширину, чтобы табы были одинаковыми */
+}
+
+/* --- 3. Выделение активного контрол-таба --- */
+/* Подсвечиваем только заголовок, как вы и просили */
+.channel-tab-button.active .channel-tab-title {
+    border: var(--highlighted-button-border);
+}
+
+.channel-tab-button.active {
+    background-color: var(--highlighted-button-background-color);
+    background-color: var(--button-background-color);
+    border: var(--highlighted-button-background-color);
+    margin-bottom: -10px;
+    border-radius: 0;
+}
+
+
+
+/* --- 4. Внутренняя структура контрол-таба --- */
+.channel-tab-button .channel-tab-title {
+    font-weight: bold;
+    font-size: 1.1em;
+    padding: 5px;
+    margin: -8px -8px 8px -8px; /* Выносим заголовок к краям */
+    border-top-left-radius: var(--border-radius);
+    border-top-right-radius: var(--border-radius);
+    text-align: center;
+    border: var(--button-border); /* Рамка по умолчанию */
+    border-bottom: var(--box-border); /* Нижняя рамка-разделитель */
+    transition: all 0.1s ease-in-out;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+}
+
+/* Вертикальное расположение контролов */
+.channel-tab-button .channel-tab-controls {
+    display: flex;
+    flex-direction: column; /* Располагаем вертикально */
+    gap: 6px;
+    align-items: center; /* Центрируем по горизонтали */
+}
+
+/* Ограничиваем ширину инпутов */
+.channel-tab-controls .setting {
+    width: 160px;
+}
+.channel-tab-controls .setting .setting-label {
+    width: 50%;
+}
+
+.channel-tab-controls .setting-input {
+    width: 50%; /* Инпут занимает всю ширину родителя .setting */
+}
+
+.channel-tab-button .channel-tab-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+}
+.channel-tab-button .channel-tab-buttons .button.button-with-icon {
+    width: 50%;
+    scale: 0.7;
+}
+
+/* --- 5. Общий контейнер для настроек канала (нижний блок) --- */
+/* Используем Grid Layout для создания двух колонок */
+.channel-details-grid {
+    display: grid;
+    /* Левая колонка - 350px, правая - всё остальное доступное место */
+    grid-template-columns: 480px 1fr;
+    gap: 20px;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    background-color: #17212b;
+    padding: 20px;
+}
+
+/* --- 6. Стили для блока кроссовера (левая колонка) --- */
+.crossover-block {
+    /* Этот блок теперь просто контейнер, основная верстка в таблице */
+}
+
+.crossover-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.crossover-table th, .crossover-table td {
+    border: var(--box-border);
+    padding: 8px;
+    text-align: center;
+    vertical-align: middle;
+}
+.crossover-table th { background-color: var(--button-background-color); }
+.input-with-button { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.crossover-table .setting { margin: 0; }
+.crossover-table .setting-label { display: none; }
+
+/* --- 7. Стили для ряда дополнительных фильтров (правая колонка) --- */
+.additional-filters-wrapper .box-title { /* Стили для заголовка "Дополнительные фильтры" */
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+/* ИСПРАВЛЕНО: Основной контейнер с фильтрами, теперь с переносом */
+.additional-filters-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap; /* <-- ВКЛЮЧАЕМ PЕРЕНОС */
+    gap: 25px;
+    padding: 5px; /* Уменьшаем паддинг, рамку убираем для чистоты */
+    align-content: flex-start; /* Прижимаем строки к верху */
+    width: 100%; /* <-- УКАЗЫВАЕМ, ЧТОБЫ БЛОК РАСТЯНУЛСЯ */
+}
+
+
+.additional-filters-row .box {
+border-radius: var(--border-radius);
+border: 10px solid var(--background-color);
+min-width: 255px;
+}
+
+/* Контейнер для одного дополнительного фильтра, ограничиваем ширину */
+.additional-filter-item {
+    flex-shrink: 0;
+    width: 220px; /* Максимальная ширина одного блока фильтра */
+}
+
+/* Уменьшаем инпуты внутри доп. фильтров, чтобы они влезали */
+.additional-filter-item .setting-input {
+    width: 100%; /* Занимает всю доступную ширину внутри .setting */
+}
+.additional-filter-item .setting-label {
+    width: 40%; /* Уменьшаем долю лейбла, чтобы инпуту было больше места */
+}
+
+/* --- 8. Состояние Muted --- */
+/* Этот класс нужно будет динамически добавлять к .channel-details-grid или .tabpanel */
+.channel-muted {
+  /*  filter: grayscale(100%); /* Делаем Ч/Б */
+    opacity: 0.5; /* Делаем полупрозрачным */
+    transition: all 0.1s;
+}
+
+
+/* ===== Стили для отображения единиц измерения в полях ввода ===== */
+
+/* 1. Контейнер-обертка */
+.input-with-unit {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%; /* Занимает всю доступную ширину в .setting */
+}
+
+/* 2. Стилизуем сам input внутри обертки */
+.input-with-unit input {
+    width: 100%;
+
+}
+
+/* 3. Стилизуем текст единиц измерения */
+.input-unit {
+    position: absolute;
+    right: 8px; /* Располагаем справа с небольшим отступом */
+    color: var(--disabled-text-color); /* Делаем текст приглушенным */
+    opacity: 0.8;
+    font-size: 0.9em;
+    pointer-events: none; /* Текст не будет перехватывать клики мыши */
+}
+
+.crossover-block-flex {
+    display: flex;
+    gap: 10px;
+    border-right: 10px solid var(--background-color);
+    padding-right: 30px;
+}
+.crossover-labels {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 40px; /* Сдвигаем вниз, чтобы совпасть с полями */
+    text-align: right;
+    color: var(--disabled-text-color);
+    flex-shrink: 0;
+}
+.crossover-label {
+    height: 28px; /* Высота инпута */
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+.crossover-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-grow: 1; /* Колонки делят место поровну */
+    border: var(--box-border);
+    border-radius: var(--border-radius);
+    padding: 8px;
+    transition: all 0.1s ease;
+    height: fit-content;
+}
+.crossover-column-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+/* Стили для байпаса (вы можете их кастомизировать) */
+.filter-bypassed {
+    opacity: 0.5;
+    background-color: #333;
 }

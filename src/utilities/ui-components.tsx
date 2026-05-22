@@ -272,10 +272,14 @@ export function OptionLine(props: {
 }) {
   const settingStyle = props.small ? { width: "min-content" } : {}
   const combinedStyle = Object.assign(settingStyle, props.style)
+
+  const paramClass = `setting-${props.desc.toLowerCase().replace(/\s+/g, "-")}`
+  const className = `setting ${paramClass}`
+
   return (
     <label
       htmlFor={props.desc}
-      className="setting"
+      className={className}
       data-tooltip-html={props.tooltip}
       data-tooltip-id="main-tooltip"
       style={combinedStyle}
@@ -296,7 +300,9 @@ export function IntOption(props: {
   withControls?: boolean
   min?: number
   max?: number
+  step?: number
   style?: CSSProperties
+  isDangerousChange?: (oldVal: number, newVal: number) => boolean
 }) {
   const { error, desc, small, style } = props
   return (
@@ -323,6 +329,7 @@ export function OptionalIntOption(props: {
   withControls?: boolean
   min?: number
   max?: number
+  step?: number
 }) {
   const small = props.small
   return (
@@ -346,18 +353,22 @@ export function IntInput(props: {
   withControls?: boolean
   min?: number
   max?: number
+  step?: number
   className?: string
   style?: CSSProperties
+  isDangerousChange?: (oldVal: number, newVal: number) => boolean
 }) {
-  const { min, max } = props
   return (
     <ParsedInput
       {...props}
-      immediate={true}
       asString={(int: number) => int.toString()}
       parseValue={(rawValue: string) => {
         const parsedvalue = parseInt(rawValue)
-        if (isNaN(parsedvalue) || (min !== undefined && parsedvalue < min) || (max !== undefined && parsedvalue > max))
+        if (
+          isNaN(parsedvalue) ||
+          (props.min !== undefined && parsedvalue < props.min) ||
+          (props.max !== undefined && parsedvalue > props.max)
+        )
           return undefined
         else return parsedvalue
       }}
@@ -370,20 +381,23 @@ export function OptionalIntInput(props: {
   tooltip: string
   onChange: (value: number | null) => void
   withControls?: boolean
+  step?: number
   min?: number
   max?: number
   className?: string
   style?: CSSProperties
 }) {
-  const { min, max } = props
   return (
     <OptionalParsedInput
       {...props}
-      immediate={true}
       asString={(int: number | null | undefined) => (int !== null && int !== undefined ? int.toString() : "")}
       parseValue={(rawValue: string | undefined) => {
         const parsedvalue = rawValue !== undefined ? parseInt(rawValue) : NaN
-        if (isNaN(parsedvalue) || (min !== undefined && parsedvalue < min) || (max !== undefined && parsedvalue > max))
+        if (
+          isNaN(parsedvalue) ||
+          (props.min !== undefined && parsedvalue < props.min) ||
+          (props.max !== undefined && parsedvalue > props.max)
+        )
           return undefined
         else return parsedvalue
       }}
@@ -397,11 +411,26 @@ export function FloatOption(props: {
   desc: string
   tooltip: string
   onChange: (value: number) => void
+  withControls?: boolean
+  step?: number
+  forceDecimals?: number
+  unit?: string
+  isDangerousChange?: (oldVal: number, newVal: number) => boolean
 }) {
   return (
     <>
       <OptionLine desc={props.desc} tooltip={props.tooltip}>
-        <FloatInput value={props.value} tooltip={props.tooltip} onChange={props.onChange} className="setting-input" />
+        <FloatInput
+          value={props.value}
+          tooltip={props.tooltip}
+          onChange={props.onChange}
+          className="setting-input"
+          forceDecimals={props.forceDecimals}
+          withControls={props.withControls}
+          step={props.step}
+          error={props.error !== undefined}
+          isDangerousChange={props.isDangerousChange}
+        />
       </OptionLine>
       <ErrorMessage message={props.error} />
     </>
@@ -415,22 +444,24 @@ export function FloatInput(props: {
   onChange: (value: number) => void
   className?: string
   style?: CSSProperties
+  withControls?: boolean
+  step?: number
+  forceDecimals?: number
+  isDangerousChange?: (oldVal: number, newVal: number) => boolean
 }) {
   return (
     <ParsedInput
-      value={props.value}
-      immediate={true}
-      tooltip={props.tooltip}
-      onChange={props.onChange}
-      asString={(float?: number) => (float === undefined ? "" : float.toString())}
+      {...props}
+      asString={(float?: number) => {
+        if (float === undefined || float === null) return ""
+        if (props.forceDecimals !== undefined && props.forceDecimals >= 0) {
+          return float.toFixed(props.forceDecimals)
+        }
+        return float.toString()
+      }}
       parseValue={(rawValue: string) => {
         const parsedvalue = parseFloat(rawValue)
         return isNaN(parsedvalue) || rawValue.endsWith(".") ? undefined : parsedvalue
-      }}
-      className={props.className}
-      style={{
-        ...props.style,
-        ...(props.error ? ERROR_BACKGROUND_STYLE : undefined),
       }}
     />
   )
@@ -471,22 +502,13 @@ export function OptionalFloatInput(props: {
 }) {
   return (
     <OptionalParsedInput
-      value={props.value}
-      immediate={true}
-      tooltip={props.tooltip}
-      onChange={props.onChange}
-      placeholder={props.placeholder}
+      {...props}
       asString={(float?: number | null) => (float === undefined || float === null ? "" : float.toString())}
       parseValue={(rawValue: string | undefined) => {
         if (rawValue === "") return null
         const parsedvalue = rawValue !== undefined ? parseFloat(rawValue) : NaN
         if (isNaN(parsedvalue)) return undefined
         else return parsedvalue
-      }}
-      className={props.className}
-      style={{
-        ...props.style,
-        ...(props.error ? ERROR_BACKGROUND_STYLE : undefined),
       }}
     />
   )
@@ -503,8 +525,6 @@ export function FloatListOption(props: {
     <>
       <OptionLine desc={props.desc} tooltip={props.tooltip}>
         <ParsedInput
-          className="setting-input"
-          immediate={true}
           value={props.value}
           tooltip={props.tooltip}
           asString={(value: number[]) => value.join(", ")}
@@ -580,40 +600,85 @@ type ParsedInputProps<TYPE> = {
   onChange: (value: TYPE) => void
   asString: (value: TYPE) => string
   parseValue: (rawValue: string) => TYPE | undefined
-  immediate: boolean
   withControls?: boolean
+  step?: number
   min?: number
   max?: number
   placeholder?: string
+  isDangerousChange?: (oldVal: TYPE, newVal: TYPE) => boolean
 }
 
 export class ParsedInput<TYPE> extends React.Component<ParsedInputProps<TYPE>, { rawValue: string; pending: boolean }> {
+  private debounceTimer: number | undefined
+
   constructor(props: ParsedInputProps<TYPE>) {
     super(props)
-    this.updateValue = this.updateValue.bind(this)
-    this.state = { rawValue: props.asString(props.value), pending: false }
+    this.handleInputChange = this.handleInputChange.bind(this)
+    this.handleBlur = this.handleBlur.bind(this)
+    this.handleSubmit = this.handleSubmit.bind(this)
+    this.applyValue = this.applyValue.bind(this)
+
+    this.state = {
+      rawValue: props.asString(props.value),
+      pending: false,
+    }
   }
 
   componentDidUpdate(prevProps: ParsedInputProps<TYPE>) {
-    if (prevProps.value !== this.props.value) this.setState({ rawValue: this.props.asString(this.props.value) })
+    if (prevProps.value !== this.props.value) {
+      this.setState({ rawValue: this.props.asString(this.props.value) })
+    }
   }
 
-  private updateValue(rawValue: string, perform_callback: boolean) {
-    this.setState({ rawValue: rawValue, pending: true })
-    const parsed = this.props.parseValue(rawValue)
-    if (parsed !== undefined && (perform_callback || this.props.immediate)) {
-      this.props.onChange(parsed)
+  componentWillUnmount() {
+    clearTimeout(this.debounceTimer)
+  }
+
+  private applyValue(valueToApply: TYPE, force: boolean = false) {
+    clearTimeout(this.debounceTimer)
+
+    let isDangerous = false
+    if (this.props.isDangerousChange && !force) {
+      isDangerous = this.props.isDangerousChange(this.props.value, valueToApply)
+    }
+
+    if (isDangerous) {
+      this.setState({ pending: true })
+    } else {
+      this.props.onChange(valueToApply)
       this.setState({ pending: false })
     }
   }
 
-  handleSubmit(event: KeyboardEvent) {
-    if (!this.props.immediate && event.key === "Enter") {
+  private handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const newRawValue = event.target.value
+    this.setState({ rawValue: newRawValue, pending: true })
+
+    clearTimeout(this.debounceTimer)
+
+    const parsed = this.props.parseValue(newRawValue)
+    if (parsed !== undefined) {
+      this.debounceTimer = window.setTimeout(() => {
+        this.applyValue(parsed, false)
+      }, 400)
+    }
+  }
+
+  private handleBlur(event: React.FocusEvent<HTMLInputElement>) {
+    const parsed = this.props.parseValue(event.target.value)
+    if (parsed !== undefined) {
+      this.applyValue(parsed, true)
+    } else {
+      this.setState({ rawValue: this.props.asString(this.props.value), pending: false })
+    }
+  }
+
+  private handleSubmit(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
       event.preventDefault()
       const parsed = this.props.parseValue(this.state.rawValue)
       if (parsed !== undefined) {
-        this.props.onChange(parsed)
-        this.setState({ pending: false })
+        this.applyValue(parsed, true)
       }
     }
   }
@@ -631,24 +696,25 @@ export class ParsedInput<TYPE> extends React.Component<ParsedInputProps<TYPE>, {
   }
 
   render() {
-    const props = this.props
-    const parsedValue = props.parseValue(this.state.rawValue)
-    const valid = parsedValue !== undefined
+    const { withControls, min, max, step, tooltip, className, placeholder } = this.props
+    const valid = this.props.parseValue(this.state.rawValue) !== undefined
+
     return (
       <input
         spellCheck="false"
-        type={props.withControls ? "number" : "text"}
-        min={props.min}
-        max={props.max}
+        type={withControls ? "number" : "text"}
+        min={min}
+        max={max}
+        step={step}
         value={this.state.rawValue}
-        placeholder={props.placeholder}
-        data-tooltip-html={props.tooltip}
+        placeholder={placeholder}
+        data-tooltip-html={tooltip}
         data-tooltip-id="main-tooltip"
-        className={props.className}
+        className={className}
         style={this.getStyle(valid)}
-        onBlur={(e) => this.updateValue(e.target.value, true)}
-        onChange={(e) => this.updateValue(e.target.value, false)}
-        onKeyDown={(e) => this.handleSubmit(e)}
+        onBlur={this.handleBlur}
+        onChange={this.handleInputChange}
+        onKeyDown={this.handleSubmit}
       />
     )
   }
@@ -662,7 +728,6 @@ type OptionalParsedInputProps<TYPE> = {
   onChange: (value: TYPE | null) => void
   asString: (value: TYPE | null) => string | undefined
   parseValue: (rawValue: string | undefined) => TYPE | null | undefined
-  immediate: boolean
   withControls?: boolean
   min?: number
   max?: number
@@ -683,23 +748,19 @@ export class OptionalParsedInput<TYPE> extends React.Component<
     if (prevProps.value !== this.props.value) this.setState({ rawValue: this.props.asString(this.props.value) })
   }
 
-  private updateValue(rawValue: string, perform_callback: boolean) {
+  private updateValue(rawValue: string, forceApply: boolean) {
     this.setState({ rawValue: rawValue, pending: true })
     const parsed = rawValue === "" ? null : this.props.parseValue(rawValue)
-    if (parsed !== undefined && (perform_callback || this.props.immediate)) {
+    if (parsed !== undefined && (forceApply || true)) {
       this.props.onChange(parsed)
       this.setState({ pending: false })
     }
   }
 
   handleSubmit(event: KeyboardEvent) {
-    if (!this.props.immediate && event.key === "Enter") {
+    if (event.key === "Enter") {
       event.preventDefault()
-      const parsed = this.props.parseValue(this.state.rawValue)
-      if (parsed !== undefined) {
-        this.props.onChange(parsed)
-        this.setState({ pending: false })
-      }
+      this.updateValue(this.state.rawValue || "", true)
     }
   }
 
@@ -730,7 +791,7 @@ export class OptionalParsedInput<TYPE> extends React.Component<
         type={props.withControls ? "number" : "text"}
         min={props.min}
         max={props.max}
-        value={this.state.rawValue}
+        value={this.state.rawValue || ""}
         data-tooltip-html={props.tooltip}
         data-tooltip-id="main-tooltip"
         className={props.className}
