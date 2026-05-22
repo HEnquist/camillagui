@@ -1,15 +1,15 @@
-// ===== Файл: src/filterstab.tsx (Обновлённая версия) =====
+// ===== File: src/filterstab.tsx (Updated version) =====
 
 import React from "react"
 import { Config } from "./camilladsp/config"
 import { Update } from "./utilities/common"
 import { Errors } from "./utilities/errors"
 
-// Импортируем два наших новых компонента
-import { ClassicFiltersView } from './ClassicFiltersView'
-import { MultichannelFiltersView } from './MultichannelFiltersView'
+// Import our two new components
+import { ClassicFiltersView } from "./ClassicFiltersView"
+import { MultichannelFiltersView } from "./MultichannelFiltersView"
 
-// Определяем пропсы, которые будут передаваться дальше
+// Define props that will be passed further
 export interface FiltersTabProps {
   config: Config
   samplerate: number
@@ -17,36 +17,36 @@ export interface FiltersTabProps {
   coeffDir: string
   updateConfig: (update: Update<Config>) => void
   errors: Errors
-  activeChannelTab: number | 'common'
-  onChannelTabChange: (tabIndex: number | 'common') => void
+  activeChannelTab: number | "common"
+  onChannelTabChange: (tabIndex: number | "common") => void
 }
 
 /**
- * Проверяет наличие микшера 'xover' в конфигурации.
- * @param config - Текущая конфигурация CamillaDSP.
- * @returns true, если микшер найден, иначе false.
+ * Checks for the presence of 'xover' mixer in the configuration.
+ * @param config - Current CamillaDSP configuration.
+ * @returns true if mixer is found, otherwise false.
  */
 const hasXoverMixer = (config: Config): boolean => {
   if (!config.mixers) {
-    return false;
+    return false
   }
-  // Поиск без учета регистра
-  return Object.keys(config.mixers).some(name => name.toLowerCase() === 'xover');
-};
+  // Case-insensitive search
+  return Object.keys(config.mixers).some((name) => name.toLowerCase() === "xover")
+}
 
 /**
- * Новый FiltersTab - теперь это просто "диспетчер".
- * Он решает, какой вид интерфейса фильтров показать: классический или многоканальный.
+ * New FiltersTab - now it's just a "dispatcher".
+ * It decides which filter interface view to show: classic or multi-channel.
  */
 export class FiltersTab extends React.Component<FiltersTabProps> {
   render() {
-    // Проверяем, существует ли микшер 'xover'
+    // Check if 'xover' mixer exists
     if (hasXoverMixer(this.props.config)) {
-      // Если да, показываем новый многоканальный интерфейс
-      return <MultichannelFiltersView {...this.props} />;
+      // If yes, show new multi-channel interface
+      return <MultichannelFiltersView {...this.props} />
     } else {
-      // Если нет, показываем старый добрый классический интерфейс
-      return <ClassicFiltersView {...this.props} />;
+      // If no, show the good old classic interface
+      return <ClassicFiltersView {...this.props} />
     }
   }
 }

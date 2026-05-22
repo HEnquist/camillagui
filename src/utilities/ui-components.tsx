@@ -449,9 +449,13 @@ export function FloatInput(props: {
   forceDecimals?: number
   isDangerousChange?: (oldVal: number, newVal: number) => boolean
 }) {
+  const { error, style, ...rest } = props
   return (
     <ParsedInput
-      {...props}
+      style={{
+        ...style,
+        ...(error ? ERROR_BACKGROUND_STYLE : undefined),
+      }}
       asString={(float?: number) => {
         if (float === undefined || float === null) return ""
         if (props.forceDecimals !== undefined && props.forceDecimals >= 0) {
@@ -463,6 +467,7 @@ export function FloatInput(props: {
         const parsedvalue = parseFloat(rawValue)
         return isNaN(parsedvalue) || rawValue.endsWith(".") ? undefined : parsedvalue
       }}
+      {...rest}
     />
   )
 }
@@ -484,6 +489,7 @@ export function OptionalFloatOption(props: {
           onChange={props.onChange}
           placeholder={props.placeholder}
           className="setting-input"
+          error={props.error !== undefined}
         />
       </OptionLine>
       <ErrorMessage message={props.error} />
@@ -500,9 +506,13 @@ export function OptionalFloatInput(props: {
   style?: CSSProperties
   placeholder?: string
 }) {
+  const { error, style, ...rest } = props
   return (
     <OptionalParsedInput
-      {...props}
+      style={{
+        ...style,
+        ...(error ? ERROR_BACKGROUND_STYLE : undefined),
+      }}
       asString={(float?: number | null) => (float === undefined || float === null ? "" : float.toString())}
       parseValue={(rawValue: string | undefined) => {
         if (rawValue === "") return null
@@ -510,6 +520,7 @@ export function OptionalFloatInput(props: {
         if (isNaN(parsedvalue)) return undefined
         else return parsedvalue
       }}
+      {...rest}
     />
   )
 }
