@@ -3,28 +3,36 @@ import {
   mdiAlertCircle,
   mdiCheck,
   mdiContentSave,
-  mdiDelete,
-  mdiDownload,
   mdiMenu,
   mdiOpenInApp,
-  mdiPencil,
   mdiRefresh,
   mdiScaleUnbalanced,
   mdiStar,
   mdiStarOutline,
-  mdiUpload,
 } from "@mdi/js"
+import { ColumnDef } from "@tanstack/react-table"
 import { isEqual } from "lodash"
-import DataTable, { TableColumn } from "react-data-table-component"
-import { Config, defaultConfig } from "./camilladsp/config"
+import { Config, CURRENT_CONFIG_VERSION, defaultConfig } from "./camilladsp/config"
 import { GuiConfig } from "./guiconfig"
 import { ImportPopup, ImportPopupProps } from "./import/importpopup"
 import { PipelinePopup } from "./pipeline/pipelineplotter"
 import { Update } from "./utilities/common"
+import { DataTable, sortByRows } from "./utilities/data-table"
 import { DiffPopup } from "./utilities/diffpopup"
+import {
+  DeleteFilesButton,
+  DownloadFilesAsZipButton,
+  EMPTY_FILENAME,
+  FileAction,
+  FileStatus,
+  FileStatusMessage,
+  RenameButton,
+  UploadFilesButton,
+} from "./utilities/file-actions"
 import {
   doUpload,
   download,
+  downloadFromUrl,
   FileInfo,
   fileNamesOf,
   hasWarningIssues,
@@ -34,6 +42,7 @@ import {
   loadDefaultConfigJson,
   loadFiles,
   loadMigratedConfigJson,
+  StoredFileType,
 } from "./utilities/files"
 import {
   Box,
@@ -46,10 +55,7 @@ import {
   fileValidSort,
   MdiButton,
   PlotButton,
-  UploadButton,
 } from "./utilities/ui-components"
-
-const CURRENT_VERSION = 4
 
 export function Files(props: {
   guiConfig: GuiConfig
@@ -87,7 +93,7 @@ export function Files(props: {
   )
 }
 
-type FileType = "config" | "coeff"
+type FileType = StoredFileType
 
 interface FileTableProps {
   title: string
@@ -99,21 +105,6 @@ interface FileTableProps {
   setCurrentConfigFileName?: (filename: string | undefined) => void
   saveNotify?: () => void
 }
-
-type FileAction = "load" | "save" | "upload" | "rename"
-const EMPTY_FILENAME = "" // used only for FileAction 'upload'
-type FileStatus =
-  | {
-      filename: string
-      action: FileAction
-      success: true
-    }
-  | {
-      filename: string
-      action: FileAction
-      success: false
-      statusText: string
-    }
 
 class FileTable extends Component<
   FileTableProps,
@@ -136,6 +127,15 @@ class FileTable extends Component<
   }
 > {
   private readonly type: FileType = this.props.type
+  private timerId: ReturnType<typeof setInterval> | undefined
+  private readonly handleVisibilityChange = () => {
+    if (document.hidden) {
+      this.stopPolling()
+      return
+    }
+    this.startPolling()
+    this.update()
+  }
 
   constructor(props: FileTableProps) {
     super(props)
@@ -178,13 +178,28 @@ class FileTable extends Component<
 
   componentDidMount() {
     this.update()
-    const timerId = setInterval(this.update, 10000)
-    this.setState({ stopTimer: () => clearInterval(timerId) })
+    document.addEventListener("visibilitychange", this.handleVisibilityChange)
+    this.startPolling()
     this.loadActiveConfigName()
   }
 
   componentWillUnmount() {
-    this.state.stopTimer()
+    document.removeEventListener("visibilitychange", this.handleVisibilityChange)
+    this.stopPolling()
+  }
+
+  private startPolling() {
+    if (document.hidden || this.timerId !== undefined) {
+      return
+    }
+    this.timerId = setInterval(this.update, 10000)
+  }
+
+  private stopPolling() {
+    if (this.timerId !== undefined) {
+      clearInterval(this.timerId)
+      this.timerId = undefined
+    }
   }
 
   private update() {
@@ -369,7 +384,8 @@ class FileTable extends Component<
   }
 
   private async rename(filename: string, type: "coeff" | "config") {
-    const newName = window.prompt(`Enter a new name for ${filename}`)
+    const newName = window.prompt(`Enter a new name for ${filename}`, filename)
+    if (newName === filename) return
     if (!newName) return
     try {
       const response = await fetch(
@@ -405,61 +421,59 @@ class FileTable extends Component<
       showPipelinePlot,
       configToPlot,
     } = this.state
-    const columns: TableColumn<FileInfo>[] = []
+    const columns: ColumnDef<FileInfo, unknown>[] = []
     if (this.type === "coeff") {
       columns.push({
-        name: "",
-        cell: (row: FileInfo, index: number) => (
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
           <div style={{ display: "flex", flexDirection: "row" }}>
             <RenameButton
-              key={"rename" + index}
-              filename={row.name}
+              filename={row.original.name}
               fileStatus={fileStatus}
-              rename={() => this.rename(row.name, "coeff")}
+              rename={() => this.rename(row.original.name, "coeff")}
             />
           </div>
         ),
-        sortable: false,
-        compact: true,
-        width: "42px",
+        enableSorting: false,
+        meta: {
+          compact: true,
+          width: "42px",
+        },
       })
       columns.push({
-        name: "Filename",
-        cell: (row: FileInfo) => (
+        id: "filename",
+        header: "Filename",
+        accessorFn: (row) => row.name,
+        cell: ({ row }) => (
           <div>
-            <FileDownloadLink type={this.type} filename={row.name} isCurrentConfig={false} />
-            <FileStatusMessage filename={row.name} fileStatus={fileStatus} type={this.type} />
+            <FileDownloadLink type={this.type} filename={row.original.name} isCurrentConfig={false} />
+            <FileStatusMessage filename={row.original.name} fileStatus={fileStatus} type={this.type} />
           </div>
         ),
-        sortFunction: fileNameSort,
-        sortable: true,
-        grow: 1,
-        compact: true,
+        sortingFn: sortByRows(fileNameSort),
+        meta: {
+          compact: true,
+        },
       })
     } else if (this.type === "config") {
       columns.push({
-        name: "",
-        cell: (row: FileInfo, index: number) => (
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
           <div style={{ display: "flex", flexDirection: "row" }}>
             <SetActiveButton
-              key={"setactive" + index}
-              active={row.name === activeConfigFileName}
-              onClick={() => this.setActiveConfig(row.name)}
-              enabled={this.props.canUpdateActiveConfig && row.valid}
-              valid={row.valid}
+              active={row.original.name === activeConfigFileName}
+              onClick={() => this.setActiveConfig(row.original.name)}
+              enabled={this.props.canUpdateActiveConfig && row.original.valid}
+              valid={row.original.valid}
             />
-            <SaveButton
-              key={"save" + index}
-              filename={row.name}
-              fileStatus={fileStatus}
-              saveConfig={this.overwriteConfig}
-            />
+            <SaveButton filename={row.original.name} fileStatus={fileStatus} saveConfig={this.overwriteConfig} />
             <LoadButton
-              key={"load" + index}
-              filename={row.name}
+              filename={row.original.name}
               fileStatus={fileStatus}
-              valid={row.valid}
-              for_version={row.version}
+              valid={row.original.valid}
+              for_version={row.original.version}
               loadConfig={this.loadConfig}
             />
             <div
@@ -471,15 +485,14 @@ class FileTable extends Component<
               }}
             >
               <MdiButton
-                key={"filemenu" + index}
                 icon={mdiMenu}
                 tooltip="More actions"
-                highlighted={this.state.fileMenuOpen === index}
-                onClick={() => this.toggleFileMenu(index)}
+                highlighted={this.state.fileMenuOpen === row.index}
+                onClick={() => this.toggleFileMenu(row.index)}
               />
               <DropdownBox
-                enabled={this.state.fileMenuOpen === index}
-                onOutsideClick={() => this.toggleFileMenu(index)}
+                enabled={this.state.fileMenuOpen === row.index}
+                onOutsideClick={() => this.toggleFileMenu(row.index)}
               >
                 <div
                   style={{
@@ -489,146 +502,156 @@ class FileTable extends Component<
                   }}
                 >
                   <RenameButton
-                    key={"rename" + index}
-                    filename={row.name}
+                    filename={row.original.name}
                     fileStatus={fileStatus}
-                    rename={() => this.rename(row.name, "config")}
+                    rename={() => this.rename(row.original.name, "config")}
                   />
                   <CompareToGUIButton
-                    key={"compare" + index}
-                    filename={row.name}
-                    valid={row.valid}
+                    filename={row.original.name}
+                    valid={row.original.valid}
                     compareConfig={this.compareConfig}
                   />
                   <PlotButton
                     tooltip="Plot the pipeline"
                     pipeline={true}
-                    enabled={row.valid}
-                    onClick={() => this.plotConfig(row.name)}
+                    enabled={row.original.valid}
+                    onClick={() => this.plotConfig(row.original.name)}
                   />
                 </div>
               </DropdownBox>
             </div>
           </div>
         ),
-        sortable: false,
-        compact: true,
-        width: "160px",
+        enableSorting: false,
+        meta: {
+          compact: true,
+          width: "160px",
+        },
       })
       columns.push({
-        name: "Filename",
-        cell: (row: FileInfo) => (
+        id: "filename",
+        header: "Filename",
+        accessorFn: (row) => row.name,
+        cell: ({ row }) => (
           <div>
             <FileDownloadLink
               type={this.type}
-              filename={row.name}
-              isCurrentConfig={row.name === this.props.currentConfigFile}
+              filename={row.original.name}
+              isCurrentConfig={row.original.name === this.props.currentConfigFile}
             />
-            <FileStatusMessage filename={row.name} fileStatus={fileStatus} type={this.type} />
+            <FileStatusMessage filename={row.original.name} fileStatus={fileStatus} type={this.type} />
           </div>
         ),
-        sortFunction: fileNameSort,
-        sortable: true,
-        width: "250px",
-        compact: true,
+        sortingFn: sortByRows(fileNameSort),
+        meta: {
+          width: "250px",
+          compact: true,
+        },
       })
       columns.push({
-        name: "Title",
-        cell: (row: FileInfo) => (
-          <div data-tooltip-html={row.description} data-tooltip-id="main-tooltip">
-            {row.title ? row.title : row.description ? <i>{row.description.slice(0, 20) + "..."}</i> : null}
+        id: "title",
+        header: "Title",
+        accessorFn: (row) => row.title || row.description || "",
+        cell: ({ row }) => (
+          <div data-tooltip-html={row.original.description} data-tooltip-id="main-tooltip">
+            {row.original.title ? (
+              row.original.title
+            ) : row.original.description ? (
+              <i>{row.original.description.slice(0, 20) + "..."}</i>
+            ) : null}
           </div>
         ),
-        sortFunction: fileTitleSort,
-        sortable: true,
-        maxWidth: "150px",
-        compact: true,
+        sortingFn: sortByRows(fileTitleSort),
+        meta: {
+          maxWidth: "150px",
+          compact: true,
+        },
       })
       columns.push({
-        name: "Valid",
-        cell: (row: FileInfo) => (
-          <div data-tooltip-html={fileStatusDesc(row.errors)} data-tooltip-id="main-tooltip">
-            {row.valid === true ? (hasWarningIssues(row.errors) ? "❗" : "✔️") : "❌"}
+        id: "valid",
+        header: "Valid",
+        accessorFn: (row) => row.valid,
+        cell: ({ row }) => (
+          <div data-tooltip-html={fileStatusDesc(row.original.errors)} data-tooltip-id="main-tooltip">
+            {row.original.valid === true ? (hasWarningIssues(row.original.errors) ? "❗" : "✔️") : "❌"}
           </div>
         ),
-        sortFunction: fileValidSort,
-        sortable: true,
-        width: "60px",
-        compact: true,
+        sortingFn: sortByRows(fileValidSort),
+        meta: {
+          width: "60px",
+          compact: true,
+        },
       })
       columns.push({
-        name: "Version",
-        selector: (row: FileInfo) => (row.version === null || row.version === undefined ? "" : row.version),
-        sortable: true,
-        width: "60px",
-        compact: true,
+        id: "version",
+        header: "Version",
+        accessorFn: (row) => (row.version === null || row.version === undefined ? "" : row.version),
+        meta: {
+          width: "60px",
+          compact: true,
+        },
       })
     }
     columns.push({
-      name: "Date",
-      selector: (row: FileInfo) => row.formattedDate,
-      sortFunction: fileDateSort,
-      sortable: true,
-      width: "110px",
-      compact: true,
+      id: "date",
+      header: "Date",
+      accessorFn: (row) => row.formattedDate,
+      sortingFn: sortByRows(fileDateSort),
+      meta: {
+        width: "110px",
+        compact: true,
+      },
     })
     columns.push({
-      name: "Size",
-      selector: (row: FileInfo) => row.size,
-      sortable: true,
-      width: "60px",
-      compact: true,
-      right: true,
+      id: "size",
+      header: "Size",
+      accessorFn: (row) => row.size,
+      meta: {
+        width: "60px",
+        compact: true,
+        right: true,
+      },
     })
-    const filteredFiles = files.filter(
-      (item) =>
-        item.name.toLowerCase().includes(filterText.toLowerCase()) ||
-        (item.title && item.title.toLowerCase().includes(filterText.toLowerCase())),
-    )
-
     return (
       <Box title={this.props.title}>
         <div>
-          {/* Header row */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "row",
-              alignItems: "center",
-            }}
-          >
-            <DownloadFilesAsZipButton
-              selectedFiles={selectedFiles.map((f) => f.name)}
-              downloadAsZip={this.downloadAsZip}
-            />
-            <DeleteFilesButton selectedFiles={selectedFiles.map((f) => f.name)} delete={this.delete} />
-            {this.props.type === "config" && (
-              <CompareFilesButton
-                key="comparefiles"
-                selectedFiles={selectedFiles}
-                compareConfigs={this.compareConfigFiles}
-              />
-            )}
-            <UploadFilesButton fileStatus={fileStatus} upload={this.upload} />
-            <input
-              type="search"
-              placeholder="Filter on name.."
-              value={filterText}
-              data-tooltip-html="Enter a search string to filter files on name"
-              data-tooltip-id="main-tooltip"
-              spellCheck="false"
-              onChange={(e) => this.setState({ filterText: e.target.value })}
-            />
-          </div>
           <div>
             <FileStatusMessage filename={EMPTY_FILENAME} fileStatus={fileStatus} type={this.type} />
           </div>
 
           <DataTable
             columns={columns}
-            data={filteredFiles}
+            data={files}
+            globalFilter={filterText}
+            toolbar={
+              <>
+                <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "4px" }}>
+                  <DownloadFilesAsZipButton
+                    selectedFiles={selectedFiles.map((f) => f.name)}
+                    downloadAsZip={this.downloadAsZip}
+                  />
+                  <DeleteFilesButton selectedFiles={selectedFiles.map((f) => f.name)} delete={this.delete} />
+                  {this.props.type === "config" && (
+                    <CompareFilesButton
+                      key="comparefiles"
+                      selectedFiles={selectedFiles}
+                      compareConfigs={this.compareConfigFiles}
+                    />
+                  )}
+                  <UploadFilesButton fileStatus={fileStatus} upload={this.upload} />
+                </div>
+                <input
+                  type="search"
+                  placeholder="Filter files"
+                  value={filterText}
+                  data-tooltip-html="Enter a search string to filter files"
+                  data-tooltip-id="main-tooltip"
+                  spellCheck="false"
+                  onChange={(e) => this.setState({ filterText: e.target.value })}
+                />
+              </>
+            }
             selectableRows
-            theme="camilla"
             onSelectedRowsChange={this.setSelected}
           />
 
@@ -699,61 +722,6 @@ class FileTable extends Component<
   }
 }
 
-function DownloadFilesAsZipButton(props: { selectedFiles: string[]; downloadAsZip: () => void }) {
-  const { selectedFiles, downloadAsZip } = props
-  const fileOrFiles = selectedFiles.length > 1 ? "files" : "file"
-  return (
-    <MdiButton
-      icon={mdiDownload}
-      tooltip={
-        selectedFiles.length === 0
-          ? "Download selected files<br>Select at least one file first!"
-          : `Download ${selectedFiles.length} ${fileOrFiles} as zip file`
-      }
-      enabled={selectedFiles.length > 0}
-      onClick={downloadAsZip}
-    />
-  )
-}
-
-function DeleteFilesButton(props: { selectedFiles: string[]; delete: () => void }) {
-  const selectedFiles = props.selectedFiles
-  const fileOrFiles = selectedFiles.length > 1 ? "files" : "file"
-  return (
-    <MdiButton
-      icon={mdiDelete}
-      tooltip={
-        selectedFiles.length === 0
-          ? "Delete selected files<br>Select at least one file first!"
-          : `Delete ${selectedFiles.length} ${fileOrFiles}`
-      }
-      enabled={selectedFiles.length > 0}
-      onClick={props.delete}
-    />
-  )
-}
-
-function UploadFilesButton(props: { fileStatus: FileStatus | null; upload: (files: FileList) => void }) {
-  const fileStatus = props.fileStatus
-  let uploadIcon: { icon: string; className?: string } = { icon: mdiUpload }
-  if (
-    fileStatus !== null &&
-    fileStatus.action === "upload" &&
-    fileStatus.filename === EMPTY_FILENAME &&
-    !fileStatus.success
-  )
-    uploadIcon = { icon: mdiAlertCircle, className: "error-text" }
-  return (
-    <UploadButton
-      icon={uploadIcon.icon}
-      tooltip={"Upload files"}
-      upload={props.upload}
-      className={uploadIcon.className}
-      multiple={true}
-    />
-  )
-}
-
 function SetActiveButton(props: { active: boolean; onClick: () => void; enabled?: boolean; valid?: boolean }) {
   const { active, onClick, enabled, valid } = props
   let tooltip
@@ -809,24 +777,6 @@ function SaveButton(props: {
   )
 }
 
-function RenameButton(props: { filename: string; fileStatus: FileStatus | null; rename: () => void }) {
-  const { filename, fileStatus, rename } = props
-  let renameIcon: { icon: string; className?: string } = { icon: mdiPencil }
-  if (fileStatus !== null && fileStatus.action === "rename" && fileStatus.filename === filename) {
-    renameIcon = fileStatus.success
-      ? { icon: mdiCheck, className: "success-text" }
-      : { icon: mdiAlertCircle, className: "error-text" }
-  }
-  return (
-    <MdiButton
-      icon={renameIcon.icon}
-      className={renameIcon.className}
-      tooltip={`Rename ${filename}`}
-      onClick={rename}
-    />
-  )
-}
-
 function LoadButton(props: {
   filename: string
   fileStatus: FileStatus | null
@@ -835,9 +785,9 @@ function LoadButton(props: {
   for_version: number | null | undefined
 }) {
   const { filename, fileStatus, loadConfig, valid, for_version } = props
-  const isLatestVersion = for_version === CURRENT_VERSION
-  const isOlderVersion = for_version !== null && for_version !== undefined && for_version < CURRENT_VERSION
-  const isFutureVersion = for_version !== null && for_version !== undefined && for_version > CURRENT_VERSION
+  const isLatestVersion = for_version === CURRENT_CONFIG_VERSION
+  const isOlderVersion = for_version !== null && for_version !== undefined && for_version < CURRENT_CONFIG_VERSION
+  const isFutureVersion = for_version !== null && for_version !== undefined && for_version > CURRENT_CONFIG_VERSION
   const shouldMigrate = isOlderVersion
 
   let loadIcon: { icon: string; className?: string } = {
@@ -927,34 +877,23 @@ function CompareFilesButton(props: {
 
 function FileDownloadLink(props: { type: string; filename: string; isCurrentConfig: boolean }) {
   const { type, filename, isCurrentConfig } = props
+  const tooltip =
+    "Download " + filename + (isCurrentConfig ? "<br>This is the config file currently loaded in this Editor" : "")
+
   return (
-    <a
+    <button
+      type="button"
       className="file-link"
       style={{ width: "max-content" }}
-      data-tooltip-html={
-        "Download " + filename + (isCurrentConfig ? "<br>This is the config file currently loaded in this Editor" : "")
-      }
+      data-tooltip-html={tooltip}
       data-tooltip-id="main-tooltip"
-      download={filename}
-      target="_blank"
-      rel="noopener noreferrer"
-      href={`/${type}/${filename}`}
+      onClick={() => {
+        void downloadFromUrl(filename, `/${type}/${encodeURIComponent(filename)}`)
+      }}
     >
       {filename}
-    </a>
+    </button>
   )
-}
-
-function FileStatusMessage(props: { filename: string; fileStatus: FileStatus | null; type: FileType }) {
-  const { fileStatus, filename, type } = props
-  if (fileStatus && !fileStatus.success && fileStatus.filename === filename)
-    return (
-      <div className={fileStatus.success ? "success-text" : "error-text"}>
-        Could not {fileStatus.action} {type}:<br />
-        {fileStatus.statusText}
-      </div>
-    )
-  else return null
 }
 
 function reasonToDisableSaveNewFileButton(newFileName: string, files: FileInfo[]): string | undefined {

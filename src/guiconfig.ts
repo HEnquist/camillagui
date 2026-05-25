@@ -16,6 +16,14 @@ export interface GuiConfig {
   volume_max: number
   volume_range: number
   page_title: string
+  spectrum_min_freq: number
+  spectrum_max_freq: number
+  spectrum_n_bins: number
+  spectrum_min_db: number
+  spectrum_max_db: number
+  spectrum_max_rate: number
+  audiofiles_supported: boolean
+  allow_absolute_paths: boolean
 }
 
 export type CaptureType =
@@ -66,11 +74,19 @@ export function defaultGuiConfig(): GuiConfig {
     coeff_dir: "",
     apply_config_automatically: false,
     save_config_automatically: false,
-    status_update_interval: 100,
+    status_update_interval: 500,
     can_update_active_config: false,
     custom_shortcuts: [],
     volume_max: 0,
     volume_range: 50,
     page_title: "CamillaDSP",
+    spectrum_min_freq: 20,
+    spectrum_max_freq: 20000,
+    spectrum_n_bins: 100,
+    spectrum_min_db: -100,
+    spectrum_max_db: 0,
+    spectrum_max_rate: 30,
+    audiofiles_supported: false,
+    allow_absolute_paths: false,
   }
 }

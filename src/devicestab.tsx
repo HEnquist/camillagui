@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react"
 import "./index.css"
-import { mdiMagnify } from "@mdi/js"
+import { mdiFileSearch, mdiMagnify, mdiTune } from "@mdi/js"
 import { Range } from "immutable"
 import {
   AlsaFormat,
@@ -27,8 +27,10 @@ import {
   WasapiFormat,
   Signals,
 } from "./camilladsp/config"
+import { DeviceCapabilities, DeviceCapabilitiesPopup } from "./devicecapabilitiespopup"
 import { CaptureType, GuiConfig, PlaybackType } from "./guiconfig"
 import { Update } from "./utilities/common"
+import { FileInfo, loadFiles } from "./utilities/files"
 import { Errors } from "./utilities/errors"
 import {
   add_default_option_inplace,
@@ -36,8 +38,10 @@ import {
   default_to_null,
   EnumInput,
   EnumOption,
+  ERROR_BACKGROUND_STYLE,
   ErrorBoundary,
   ErrorMessage,
+  FileSelectPopup,
   IntInput,
   IntOption,
   KeyValueSelectPopup,
@@ -54,6 +58,31 @@ import {
   TextInput,
   TextOption,
 } from "./utilities/ui-components"
+
+function getEffectiveCaptureSamplerate(devices: Devices): number | null {
+  if (devices.resampler !== null) {
+    return devices.capture_samplerate
+  }
+  return devices.samplerate
+}
+
+function getEffectivePlaybackSamplerate(devices: Devices): number {
+  return devices.samplerate
+}
+
+function getCaptureSamplerateDescription(devices: Devices): string {
+  if (devices.resampler !== null) {
+    if (devices.capture_samplerate !== null) {
+      return `Currently selecting values for ${devices.capture_samplerate} Hz from capture_samplerate.`
+    }
+    return "Currently selecting values from capture_samplerate."
+  }
+  return `Currently selecting values for ${devices.samplerate} Hz from samplerate.`
+}
+
+function getPlaybackSamplerateDescription(devices: Devices): string {
+  return `Currently selecting values for ${devices.samplerate} Hz from samplerate.`
+}
 
 // TODO add volume_ramp_time
 // TODO redo resampler config
@@ -116,16 +145,22 @@ export function DevicesTab(props: {
           <CaptureOptions
             hide_capture_device={guiConfig.hide_capture_device}
             supported_capture_types={availableBackends[1] as CaptureType[]}
+            devices={devices}
             capture={devices.capture}
             errors={errors.forSubpath("capture")}
             onChange={updateDevices}
+            audiofilesSupported={guiConfig.audiofiles_supported}
+            allowAbsolutePaths={guiConfig.allow_absolute_paths}
           />
           <PlaybackOptions
             hide_playback_device={guiConfig.hide_playback_device}
             supported_playback_types={availableBackends[0] as PlaybackType[]}
+            devices={devices}
             playback={devices.playback}
             errors={errors.forSubpath("playback")}
             onChange={updateDevices}
+            audiofilesSupported={guiConfig.audiofiles_supported}
+            allowAbsolutePaths={guiConfig.allow_absolute_paths}
           />
         </div>
         <div className="tabspacer" />
@@ -574,13 +609,21 @@ function VolumeOptions(props: {
 function CaptureOptions(props: {
   hide_capture_device: boolean
   supported_capture_types?: CaptureType[]
+  devices: Devices
   capture: CaptureDevice
   errors: Errors
   onChange: (update: Update<Devices>) => void
+  audiofilesSupported?: boolean
+  allowAbsolutePaths?: boolean
 }) {
   const [popupState, setPopupState] = useState(false)
   const [availableDevices, setAvailableDevices] = useState([])
+  const [capabilitiesPopupState, setCapabilitiesPopupState] = useState(false)
+  const [deviceCapabilities, setDeviceCapabilities] = useState<DeviceCapabilities | null>(null)
+  const [deviceCapabilitiesError, setDeviceCapabilitiesError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [captureFilePickerOpen, setCaptureFilePickerOpen] = useState(false)
+  const [availableCaptureFiles, setAvailableCaptureFiles] = useState<FileInfo[]>([])
   const [channels, setChannels] = useState(props.capture.type !== "WavFile" ? props.capture.channels : 2)
   const defaults: { [type: string]: CaptureDevice } = {
     Alsa: {
@@ -646,7 +689,7 @@ function CaptureOptions(props: {
       type: "RawFile",
       channels: 2,
       format: "S32_LE",
-      filename: "/path/to/file",
+      filename: "capture.raw",
       extra_samples: null,
       skip_bytes: null,
       read_bytes: null,
@@ -654,7 +697,7 @@ function CaptureOptions(props: {
     },
     WavFile: {
       type: "WavFile",
-      filename: "/path/to/file",
+      filename: "capture.wav",
       extra_samples: null,
       labels: null,
     },
@@ -692,6 +735,14 @@ function CaptureOptions(props: {
     getCaptureDeviceChannelCount(capture).then((nbr) => setChannels(nbr))
   }, [capture])
 
+  useEffect(() => {
+    if ((capture.type === "WavFile" || capture.type === "RawFile") && props.audiofilesSupported) {
+      loadFiles("audiofile")
+        .then(setAvailableCaptureFiles)
+        .catch(() => {})
+    }
+  }, [capture.type, props.audiofilesSupported])
+
   if (props.hide_capture_device) return null
 
   const toggleExpanded = () => {
@@ -716,6 +767,27 @@ function CaptureOptions(props: {
       labels = labels.slice(0, channels)
     }
     onChange((devices) => (devices.capture.labels = labels))
+  }
+
+  const fetchCaptureCapabilities = () => {
+    if (!("device" in capture) || capture.device === null || capture.device === "") {
+      return
+    }
+    setDeviceCapabilitiesError(null)
+    fetch("/api/capturedevicecapabilities/" + capture.type + "?device=" + encodeURIComponent(capture.device))
+      .then(async (response) => {
+        if (!response.ok) {
+          const message = await response.text()
+          throw new Error(message || "Failed to load capture device capabilities")
+        }
+        return response.json()
+      })
+      .then((capabilities) => setDeviceCapabilities(capabilities))
+      .catch((error: Error) => {
+        setDeviceCapabilities(null)
+        setDeviceCapabilitiesError(error.message)
+      })
+    setCapabilitiesPopupState(true)
   }
 
   const makeDropdown = () => {
@@ -754,6 +826,41 @@ function CaptureOptions(props: {
               devices.capture.type === "Jack"
             ) {
               devices.capture.device = device
+            }
+          })
+        }
+      />
+      <DeviceCapabilitiesPopup
+        open={capabilitiesPopupState}
+        header="Capture device capabilities"
+        backend={capture.type}
+        deviceName={"device" in capture ? capture.device : null}
+        capabilities={deviceCapabilities}
+        fetchError={deviceCapabilitiesError}
+        samplerate={getEffectiveCaptureSamplerate(props.devices)}
+        samplerateDescription={getCaptureSamplerateDescription(props.devices)}
+        channels={"channels" in capture ? capture.channels : 2}
+        format={"format" in capture ? (capture.format ?? null) : null}
+        onClose={() => setCapabilitiesPopupState(false)}
+        onApply={(newChannels, format) =>
+          onChange((devices) => {
+            if ("channels" in devices.capture) {
+              devices.capture.channels = newChannels
+            }
+            const capture = devices.capture
+            if (capture.type === "Alsa") {
+              capture.format = format as AlsaFormat | null
+            } else if (capture.type === "Asio") {
+              capture.format = format as AsioFormat | null
+            } else if (capture.type === "CoreAudio") {
+              capture.format = format as CoreAudioFormat | null
+            } else if (capture.type === "Wasapi") {
+              capture.format = format as WasapiFormat | null
+            } else if (
+              format !== null &&
+              (capture.type === "Stdin" || capture.type === "RawFile" || capture.type === "Bluez")
+            ) {
+              capture.format = format as BinaryFormat
             }
           })
         }
@@ -833,6 +940,15 @@ function CaptureOptions(props: {
               .then((names) => setAvailableDevices(names))
             setPopupState(true)
           }}
+          extraButtons={
+            <MdiButton
+              icon={mdiTune}
+              tooltip="Inspect device capabilities"
+              onClick={fetchCaptureCapabilities}
+              className="setting-button"
+              buttonSize="small"
+            />
+          }
         />
       )}
       {capture.type === "Alsa" && (
@@ -854,6 +970,15 @@ function CaptureOptions(props: {
                 .then((names) => setAvailableDevices(names))
               setPopupState(true)
             }}
+            extraButtons={
+              <MdiButton
+                icon={mdiTune}
+                tooltip="Inspect device capabilities"
+                onClick={fetchCaptureCapabilities}
+                className="setting-button"
+                buttonSize="small"
+              />
+            }
           />
           <OptionalTextOption
             value={capture.link_volume_control}
@@ -914,6 +1039,16 @@ function CaptureOptions(props: {
               .then((names) => setAvailableDevices(names))
             setPopupState(true)
           }}
+          extraButtons={
+            <MdiButton
+              icon={mdiTune}
+              tooltip="Inspect device capabilities"
+              onClick={fetchCaptureCapabilities}
+              className="setting-button"
+              buttonSize="small"
+              enabled={capture.device !== null && capture.device !== ""}
+            />
+          }
         />
       )}
       {capture.type === "Pulse" && (
@@ -975,19 +1110,58 @@ function CaptureOptions(props: {
         </>
       )}
       {(capture.type === "RawFile" || capture.type === "WavFile") && (
-        <TextOption
-          value={capture.filename}
-          error={errors.messageFor("filename")}
-          desc="filename"
-          tooltip="Filename including path"
-          onChange={(filename) =>
-            onChange((devices) => {
-              if (devices.capture.type === "RawFile" || devices.capture.type === "WavFile") {
-                devices.capture.filename = filename
+        <>
+          <div className="setting" data-tooltip-html="Filename including path" data-tooltip-id="main-tooltip">
+            <label htmlFor="filename" className="setting-label">
+              filename
+            </label>
+            <div className="setting-input device-option-row">
+              <TextInput
+                value={capture.filename}
+                tooltip="Filename including path"
+                className="setting-input device-option-input"
+                style={errors.messageFor("filename") ? ERROR_BACKGROUND_STYLE : undefined}
+                onChange={(filename) => {
+                  if (!props.allowAbsolutePaths && (filename.includes("/") || filename.includes("\\"))) return
+                  onChange((devices) => {
+                    if (devices.capture.type === "RawFile" || devices.capture.type === "WavFile")
+                      devices.capture.filename = filename
+                  })
+                }}
+              />
+              {props.audiofilesSupported && (
+                <div className="device-option-buttons">
+                  <MdiButton
+                    icon={mdiFileSearch}
+                    tooltip="Pick a file"
+                    onClick={() => setCaptureFilePickerOpen(true)}
+                    className="setting-button"
+                    buttonSize="small"
+                  />
+                </div>
+              )}
+            </div>
+            <ErrorMessage message={errors.messageFor("filename")} />
+          </div>
+          {props.audiofilesSupported && (
+            <FileSelectPopup
+              open={captureFilePickerOpen}
+              header={<span style={{ margin: "5px", display: "block" }}>Select a file</span>}
+              files={availableCaptureFiles.filter((f) =>
+                capture.type === "WavFile"
+                  ? f.name.toLowerCase().endsWith(".wav")
+                  : !f.name.toLowerCase().endsWith(".wav"),
+              )}
+              onClose={() => setCaptureFilePickerOpen(false)}
+              onSelect={(filename) =>
+                onChange((devices) => {
+                  if (devices.capture.type === "RawFile" || devices.capture.type === "WavFile")
+                    devices.capture.filename = filename
+                })
               }
-            })
-          }
-        />
+            />
+          )}
+        </>
       )}
       {(capture.type === "RawFile" || capture.type === "Stdin" || capture.type === "WavFile") && (
         <OptionalIntOption
@@ -1188,12 +1362,26 @@ function CaptureOptions(props: {
 function PlaybackOptions(props: {
   hide_playback_device: boolean
   supported_playback_types?: PlaybackType[]
+  devices: Devices
   playback: PlaybackDevice
   errors: Errors
   onChange: (update: Update<Devices>) => void
+  audiofilesSupported?: boolean
+  allowAbsolutePaths?: boolean
 }) {
   const [popupState, setPopupState] = useState(false)
   const [availableDevices, setAvailableDevices] = useState([])
+  const [capabilitiesPopupState, setCapabilitiesPopupState] = useState(false)
+  const [deviceCapabilities, setDeviceCapabilities] = useState<DeviceCapabilities | null>(null)
+  const [deviceCapabilitiesError, setDeviceCapabilitiesError] = useState<string | null>(null)
+  const [availableAudioFiles, setAvailableAudioFiles] = useState<FileInfo[]>([])
+  useEffect(() => {
+    if (props.playback.type === "File" && props.audiofilesSupported) {
+      loadFiles("audiofile")
+        .then(setAvailableAudioFiles)
+        .catch(() => {})
+    }
+  }, [props.playback.type, props.audiofilesSupported])
   if (props.hide_playback_device) return null
   const defaults: { [type: string]: PlaybackDevice } = {
     Alsa: { type: "Alsa", channels: 2, format: "S32_LE", device: "hw:0" },
@@ -1233,7 +1421,7 @@ function PlaybackOptions(props: {
       type: "File",
       channels: 2,
       format: "S32_LE",
-      filename: "/path/to/file",
+      filename: "output.raw",
       wav_header: false,
     },
   }
@@ -1246,6 +1434,28 @@ function PlaybackOptions(props: {
     // The selected type isn't available, change to one that is
     props.onChange((devices) => (devices.playback = defaults[playbackDeviceTypes[0]]))
   }
+
+  const fetchPlaybackCapabilities = () => {
+    if (!("device" in playback) || playback.device === null || playback.device === "") {
+      return
+    }
+    setDeviceCapabilitiesError(null)
+    fetch("/api/playbackdevicecapabilities/" + playback.type + "?device=" + encodeURIComponent(playback.device))
+      .then(async (response) => {
+        if (!response.ok) {
+          const message = await response.text()
+          throw new Error(message || "Failed to load playback device capabilities")
+        }
+        return response.json()
+      })
+      .then((capabilities) => setDeviceCapabilities(capabilities))
+      .catch((error: Error) => {
+        setDeviceCapabilities(null)
+        setDeviceCapabilitiesError(error.message)
+      })
+    setCapabilitiesPopupState(true)
+  }
+
   return (
     <Box title="Playback device">
       <KeyValueSelectPopup
@@ -1265,6 +1475,36 @@ function PlaybackOptions(props: {
               devices.playback.type === "Jack"
             ) {
               devices.playback.device = device
+            }
+          })
+        }
+      />
+      <DeviceCapabilitiesPopup
+        open={capabilitiesPopupState}
+        header="Playback device capabilities"
+        backend={playback.type}
+        deviceName={"device" in playback ? playback.device : null}
+        capabilities={deviceCapabilities}
+        fetchError={deviceCapabilitiesError}
+        samplerate={getEffectivePlaybackSamplerate(props.devices)}
+        samplerateDescription={getPlaybackSamplerateDescription(props.devices)}
+        channels={playback.channels}
+        format={"format" in playback ? (playback.format ?? null) : null}
+        onClose={() => setCapabilitiesPopupState(false)}
+        onApply={(newChannels, format) =>
+          onChange((devices) => {
+            devices.playback.channels = newChannels
+            const playback = devices.playback
+            if (playback.type === "Alsa") {
+              playback.format = format as AlsaFormat | null
+            } else if (playback.type === "Asio") {
+              playback.format = format as AsioFormat | null
+            } else if (playback.type === "CoreAudio") {
+              playback.format = format as CoreAudioFormat | null
+            } else if (playback.type === "Wasapi") {
+              playback.format = format as WasapiFormat | null
+            } else if (format !== null && (playback.type === "File" || playback.type === "Stdout")) {
+              playback.format = format as BinaryFormat
             }
           })
         }
@@ -1335,6 +1575,15 @@ function PlaybackOptions(props: {
               .then((names) => setAvailableDevices(names))
             setPopupState(true)
           }}
+          extraButtons={
+            <MdiButton
+              icon={mdiTune}
+              tooltip="Inspect device capabilities"
+              onClick={fetchPlaybackCapabilities}
+              className="setting-button"
+              buttonSize="small"
+            />
+          }
         />
       )}
       {playback.type === "Alsa" && (
@@ -1355,6 +1604,15 @@ function PlaybackOptions(props: {
               .then((names) => setAvailableDevices(names))
             setPopupState(true)
           }}
+          extraButtons={
+            <MdiButton
+              icon={mdiTune}
+              tooltip="Inspect device capabilities"
+              onClick={fetchPlaybackCapabilities}
+              className="setting-button"
+              buttonSize="small"
+            />
+          }
         />
       )}
       {(playback.type === "CoreAudio" || playback.type === "Wasapi") && (
@@ -1375,6 +1633,16 @@ function PlaybackOptions(props: {
               .then((names) => setAvailableDevices(names))
             setPopupState(true)
           }}
+          extraButtons={
+            <MdiButton
+              icon={mdiTune}
+              tooltip="Inspect device capabilities"
+              onClick={fetchPlaybackCapabilities}
+              className="setting-button"
+              buttonSize="small"
+              enabled={playback.device !== null && playback.device !== ""}
+            />
+          }
         />
       )}
       {playback.type === "Pulse" && (
@@ -1427,15 +1695,21 @@ function PlaybackOptions(props: {
           <TextOption
             value={playback.filename}
             error={errors.messageFor("filename")}
+            warning={
+              availableAudioFiles.some((f) => f.name === playback.filename)
+                ? "This file already exists and will be overwritten"
+                : undefined
+            }
             desc="filename"
             tooltip="Filename including path"
-            onChange={(filename) =>
+            onChange={(filename) => {
+              if (!props.allowAbsolutePaths && (filename.includes("/") || filename.includes("\\"))) return
               onChange((devices) => {
                 if (devices.playback.type === "File") {
                   devices.playback.filename = filename
                 }
               })
-            }
+            }}
           />
           <OptionalBoolOption
             value={playback.wav_header}
@@ -1518,27 +1792,31 @@ function DeviceOption(props: {
   desc: string
   onChange: (device: string) => void
   onButtonClick: () => void
+  extraButtons?: React.ReactNode
 }) {
   return (
     <div className="setting" data-tooltip-html="Name of device">
       <label htmlFor={props.desc} className="setting-label">
         {props.desc}
       </label>
-      <TextInput
-        value={props.value}
-        tooltip="Name of device"
-        className="setting-input"
-        style={{ width: "87%" }}
-        onChange={props.onChange}
-      />
-      <MdiButton
-        icon={mdiMagnify}
-        tooltip="Pick a device"
-        onClick={props.onButtonClick}
-        className="setting-button"
-        style={{ width: "13%" }}
-        buttonSize="small"
-      />
+      <div className="setting-input device-option-row">
+        <TextInput
+          value={props.value}
+          tooltip="Name of device"
+          className="setting-input device-option-input"
+          onChange={props.onChange}
+        />
+        <div className="device-option-buttons">
+          <MdiButton
+            icon={mdiMagnify}
+            tooltip="Pick a device"
+            onClick={props.onButtonClick}
+            className="setting-button"
+            buttonSize="small"
+          />
+          {props.extraButtons}
+        </div>
+      </div>
       <ErrorMessage message={props.error} />
     </div>
   )
@@ -1550,27 +1828,31 @@ function OptionalDeviceOption(props: {
   desc: string
   onChange: (device: string | null) => void
   onButtonClick: () => void
+  extraButtons?: React.ReactNode
 }) {
   return (
     <div className="setting" data-tooltip-html="Name of device">
       <label htmlFor={props.desc} className="setting-label">
         {props.desc}
       </label>
-      <OptionalTextInput
-        value={props.value}
-        tooltip="Name of device"
-        className="setting-input"
-        style={{ width: "87%" }}
-        onChange={props.onChange}
-      />
-      <MdiButton
-        icon={mdiMagnify}
-        tooltip="Pick a device"
-        onClick={props.onButtonClick}
-        className="setting-button"
-        style={{ width: "13%" }}
-        buttonSize="small"
-      />
+      <div className="setting-input device-option-row">
+        <OptionalTextInput
+          value={props.value}
+          tooltip="Name of device"
+          className="setting-input device-option-input"
+          onChange={props.onChange}
+        />
+        <div className="device-option-buttons">
+          <MdiButton
+            icon={mdiMagnify}
+            tooltip="Pick a device"
+            onClick={props.onButtonClick}
+            className="setting-button"
+            buttonSize="small"
+          />
+          {props.extraButtons}
+        </div>
+      </div>
       <ErrorMessage message={props.error} />
     </div>
   )

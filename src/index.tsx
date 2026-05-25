@@ -5,15 +5,16 @@ import "react-tooltip/dist/react-tooltip.css"
 import "./index.css"
 
 import * as React from "react"
-import { mdiAlert, mdiArrowULeftTop, mdiArrowURightTop, mdiImageSizeSelectSmall } from "@mdi/js"
+import { mdiAlert, mdiArrowULeftTop, mdiArrowURightTop, mdiImageSizeSelectSmall, mdiPoll } from "@mdi/js"
 import { cloneDeep } from "lodash"
 import isEqual from "lodash/isEqual"
-import { createTheme } from "react-data-table-component"
 import { createRoot } from "react-dom/client"
 import { Tab, TabList, TabPanel, Tabs } from "react-tabs"
 import { Tooltip } from "react-tooltip"
 import { Config, defaultConfig, getCaptureDeviceChannelCount } from "./camilladsp/config"
-import { CompactView, isCompactViewEnabled, setCompactViewEnabled } from "./compactview"
+import { CompactView, getViewMode, setViewMode, ViewMode } from "./compactview"
+import { DashboardView } from "./dashboardview"
+import { installDemoBackend } from "./demo/mockBackend"
 import { DevicesTab } from "./devicestab"
 import { Files } from "./filestab"
 import { FiltersTab } from "./filterstab"
@@ -21,6 +22,7 @@ import { defaultGuiConfig, GuiConfig } from "./guiconfig"
 import { UndoRedo } from "./main/UndoRedo"
 import { MixersTab } from "./mixerstab"
 import { PipelineTab } from "./pipeline/pipelinetab"
+import { FilePlayback } from "./playbacktab"
 import { ProcessorsTab } from "./processorstab"
 import { Shortcuts } from "./shortcuts"
 import { SidePanel } from "./sidepanel/sidepanel"
@@ -28,7 +30,16 @@ import { TitleTab } from "./titletab"
 import { Update } from "./utilities/common"
 import { Errors, NoErrors } from "./utilities/errors"
 import { loadStartupConfig } from "./utilities/files"
-import { delayedExecutor, MdiButton, MdiIcon } from "./utilities/ui-components"
+import { delayedExecutor, ErrorBoundary, MdiButton, MdiIcon } from "./utilities/ui-components"
+import type { CustomPageComponent } from "./custom-pages/types"
+
+const customPageModules = import.meta.glob<{ default: CustomPageComponent }>(
+  "./custom-pages/*.tsx",
+  { eager: true },
+)
+const customPages = Object.values(customPageModules)
+  .map((m) => m.default)
+  .filter((page) => page.enabled !== false)
 
 class CamillaConfig extends React.Component<
   unknown,
@@ -38,7 +49,7 @@ class CamillaConfig extends React.Component<
     guiConfig: GuiConfig
     undoRedo: UndoRedo<Config>
     errors: Errors
-    compactView: boolean
+    viewMode: ViewMode
     message: string
     unsavedChanges: boolean
     unappliedChanges: boolean
@@ -55,7 +66,7 @@ class CamillaConfig extends React.Component<
     this.setCurrentConfigFileName = this.setCurrentConfigFileName.bind(this)
     this.setErrors = this.setErrors.bind(this)
     this.switchTab = this.switchTab.bind(this)
-    this.setCompactViewEnabled = this.setCompactViewEnabled.bind(this)
+    this.setViewMode = this.setViewMode.bind(this)
     this.NormalContent = this.NormalContent.bind(this)
     this.saveNotify = this.saveNotify.bind(this)
     this.applyNotify = this.applyNotify.bind(this)
@@ -64,39 +75,13 @@ class CamillaConfig extends React.Component<
       guiConfig: defaultGuiConfig(),
       undoRedo: new UndoRedo(defaultConfig()),
       errors: NoErrors,
-      compactView: isCompactViewEnabled(),
+      viewMode: getViewMode(),
       message: "",
       unsavedChanges: false,
       unappliedChanges: true,
     }
     this.loadGuiConfig()
     this.loadConfigAtStart()
-    createTheme(
-      "camilla",
-      {
-        text: {
-          primary: "var(--text-color)",
-          secondary: "var(--text-color)",
-        },
-        background: {
-          default: "var(--background-color)",
-        },
-        context: {
-          background: "#cb4b16",
-          text: "#FFFFFF",
-        },
-        divider: {
-          default: "var(--box-border-color)",
-        },
-        highlightOnHover: {
-          default: "var(--active-button-background-color)",
-        },
-        sortFocus: {
-          default: "var(--success-text-color)",
-        },
-      },
-      "dark",
-    )
   }
 
   private async loadGuiConfig() {
@@ -108,7 +93,7 @@ class CamillaConfig extends React.Component<
         },
       )
       .then(
-        (json) => this.setState({ guiConfig: json }),
+        (json) => this.setState({ guiConfig: { ...defaultGuiConfig(), ...json } }),
         (err) => {
           console.log("Failed to parse guiconfig as json", err)
         },
@@ -152,9 +137,9 @@ class CamillaConfig extends React.Component<
     else this.setState({ message: "No config received" })
   }
 
-  private setCompactViewEnabled(enabled: boolean) {
-    setCompactViewEnabled(enabled)
-    this.setState({ compactView: enabled })
+  private setViewMode(mode: ViewMode) {
+    setViewMode(mode)
+    this.setState({ viewMode: mode })
   }
 
   private saveNotify() {
@@ -265,7 +250,7 @@ class CamillaConfig extends React.Component<
     return (
       <div className="configapp">
         <Tooltip id="main-tooltip" className="tooltip" />
-        {this.state.compactView ? (
+        {this.state.viewMode === "compact" ? (
           <CompactView
             currentConfigName={this.state.currentConfigFile}
             config={this.state.undoRedo.current()}
@@ -274,8 +259,16 @@ class CamillaConfig extends React.Component<
               this.applyConfigRequest(filename, config)
             }}
             updateConfig={(update) => this.updateConfig(update, true)}
-            disableCompactView={() => this.setCompactViewEnabled(false)}
+            switchToNormalView={() => this.setViewMode("normal")}
+            switchToDashboardView={() => this.setViewMode("dashboard")}
             guiConfig={this.state.guiConfig}
+          />
+        ) : this.state.viewMode === "dashboard" ? (
+          <DashboardView
+            guiConfig={this.state.guiConfig}
+            message={this.state.message}
+            switchToNormalView={() => this.setViewMode("normal")}
+            switchToCompactView={() => this.setViewMode("compact")}
           />
         ) : (
           <this.NormalContent />
@@ -306,9 +299,16 @@ class CamillaConfig extends React.Component<
           <TabList>
             <Tab disabled={true}>
               <MdiButton
+                icon={mdiPoll}
+                tooltip="Change to dashboard view"
+                onClick={() => this.setViewMode("dashboard")}
+                buttonSize="tiny"
+                rotation={90}
+              />
+              <MdiButton
                 icon={mdiImageSizeSelectSmall}
                 tooltip="Change to compact view"
-                onClick={() => this.setCompactViewEnabled(true)}
+                onClick={() => this.setViewMode("compact")}
                 buttonSize="tiny"
               />
               <MdiButton
@@ -345,7 +345,11 @@ class CamillaConfig extends React.Component<
             <Tab>Processors {errors.hasErrorsFor("processors") && <ErrorIcon />}</Tab>
             <Tab>Pipeline {errors.hasErrorsFor("pipeline") && <ErrorIcon />}</Tab>
             <Tab>Files</Tab>
+            {this.state.guiConfig.audiofiles_supported && <Tab>File playback</Tab>}
             <Tab>Shortcuts</Tab>
+            {customPages.map((customPage) => (
+              <Tab key={customPage.tabLabel}>{customPage.tabLabel}</Tab>
+            ))}
           </TabList>
           <TabPanel />
           <TabPanel>
@@ -365,6 +369,7 @@ class CamillaConfig extends React.Component<
               samplerate={config.devices.samplerate}
               channels={getCaptureDeviceChannelCount(config.devices.capture)}
               coeffDir={this.state.guiConfig.coeff_dir}
+              allowAbsolutePaths={this.state.guiConfig.allow_absolute_paths}
               updateConfig={this.updateConfig}
               errors={errors.forSubpath("filters")}
             />
@@ -389,6 +394,11 @@ class CamillaConfig extends React.Component<
               guiConfig={this.state.guiConfig}
             />
           </TabPanel>
+          {this.state.guiConfig.audiofiles_supported && (
+            <TabPanel>
+              <FilePlayback loadConfig={(config) => this.setCurrentConfig(undefined, config)} />
+            </TabPanel>
+          )}
           <TabPanel>
             <Shortcuts
               currentConfigName={currentConfigFile}
@@ -401,6 +411,21 @@ class CamillaConfig extends React.Component<
               shortcutSections={this.state.guiConfig.custom_shortcuts}
             />
           </TabPanel>
+          {customPages.map((customPage) => {
+            const CustomPage = customPage
+            return (
+              <TabPanel key={CustomPage.tabLabel}>
+                <ErrorBoundary>
+                  <CustomPage
+                    config={config}
+                    updateConfig={this.updateConfig}
+                    guiConfig={this.state.guiConfig}
+                    errors={errors}
+                  />
+                </ErrorBoundary>
+              </TabPanel>
+            )
+          })}
         </Tabs>
       </>
     )
@@ -412,5 +437,6 @@ function ErrorIcon() {
 }
 
 const container = document.getElementById("root")
+installDemoBackend()
 const root = createRoot(container!)
 root.render(<CamillaConfig />)

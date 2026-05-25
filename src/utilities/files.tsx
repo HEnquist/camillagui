@@ -12,9 +12,15 @@ export interface FileInfo {
   version: number | null | undefined
   valid: boolean | undefined
   errors: ValidationIssue[] | null | undefined
+  samplerate?: number | null
+  channels?: number | null
+  sampleformat?: string | null
+  duration?: number | null
 }
 
-export function loadFiles(type: "config" | "coeff"): Promise<FileInfo[]> {
+export type StoredFileType = "config" | "coeff" | "audiofile"
+
+export function loadFiles(type: StoredFileType): Promise<FileInfo[]> {
   return fetch(`/api/stored${type}s`)
     .then(
       (response) => {
@@ -39,7 +45,7 @@ export function loadFiles(type: "config" | "coeff"): Promise<FileInfo[]> {
     )
 }
 
-export function loadFilenames(type: "config" | "coeff"): Promise<string[]> {
+export function loadFilenames(type: StoredFileType): Promise<string[]> {
   return loadFiles(type).then(
     (files) => fileNamesOf(files),
     () => [],
@@ -106,8 +112,16 @@ export function download(filename: string, blob: Blob) {
   a.click()
 }
 
+export async function downloadFromUrl(filename: string, url: string) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(await response.text())
+  }
+  download(filename, await response.blob())
+}
+
 export async function doUpload(
-  type: "config" | "coeff",
+  type: StoredFileType,
   files: FileList,
   onSuccess: (filesnames: string[]) => void,
   onError: (message: string) => void,
