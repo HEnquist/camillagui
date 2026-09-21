@@ -27,6 +27,8 @@ import {
   BiquadFilterSubtypeOptions,
   BiquadComboSubtypeOptions,
   ConvSubtypeOptions,
+  CrossoverSubtypeOptions,
+  CrossoverSlopes,
   DitherSubtypeOptions,
   FilterParameterValue,
 } from "./camilladsp/config"
@@ -34,6 +36,7 @@ import { Chart, ChartContent } from "./utilities/chart"
 import { modifiedCopyOf, Update } from "./utilities/common"
 import { Errors } from "./utilities/errors"
 import { doUpload, loadFiles, FileInfo } from "./utilities/files"
+import { fetchCrossoverLatency, formatLatency } from "./utilities/latency"
 import {
   AddButton,
   BoolOption,
@@ -275,6 +278,7 @@ interface FilterViewState {
   showDefaults: boolean
   channels: number
   plot_at_volume: number
+  latency?: number
 }
 
 class FilterView extends React.Component<FilterViewProps, FilterViewState> {
@@ -306,9 +310,27 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
       }
     }
     this.plotFilter()
+    this.updateLatency()
   }
 
   private timer = delayedExecutor(500)
+  private latencyTimer = delayedExecutor(500)
+
+  private updateLatency() {
+    const { name, filter, samplerate } = this.props
+    if (filter.type !== "Crossover") {
+      if (this.state.latency !== undefined) this.setState({ latency: undefined })
+      return
+    }
+    fetchCrossoverLatency({
+      devices: { samplerate: samplerate, capture: { channels: 1 } },
+      filters: { [name]: filter },
+      pipeline: [{ type: "Filter", names: [name] }],
+    }).then(
+      (latency) => this.setState({ latency: latency.total }),
+      () => this.setState({ latency: undefined }),
+    )
+  }
 
   private uploadCoeffs(files: FileList) {
     doUpload(
@@ -373,6 +395,12 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
   }
 
   componentDidUpdate(prevProps: Readonly<FilterViewProps>, prevState: Readonly<FilterViewState>) {
+    if (
+      prevProps.filter.type !== this.props.filter.type ||
+      !isEqual(prevProps.filter.parameters, this.props.filter.parameters) ||
+      prevProps.samplerate !== this.props.samplerate
+    )
+      this.latencyTimer(() => this.updateLatency())
     if (this.state.showFilterPlot) {
       const prevFilter = prevProps.filter
       const currentFilter = this.props.filter
@@ -512,6 +540,15 @@ class FilterView extends React.Component<FilterViewProps, FilterViewState> {
             setShowDefaults={() => this.setState({ showDefaults: true })}
           />
         </div>
+        {filter.type === "Crossover" && this.state.latency !== undefined && (
+          <div
+            style={{ textAlign: "right" }}
+            data-tooltip-html="Delay added by this filter. Other channels are delayed automatically to stay aligned."
+            data-tooltip-id="main-tooltip"
+          >
+            latency: {formatLatency(this.state.latency, this.props.samplerate)}
+          </div>
+        )}
 
         <FileSelectPopup
           key="filter select popup"
@@ -715,6 +752,9 @@ class FilterParams extends React.Component<FilterParamsProps, unknown> {
     if (filtertype === "Conv") {
       return ConvSubtypeOptions
     }
+    if (filtertype === "Crossover") {
+      return CrossoverSubtypeOptions
+    }
     if (filtertype === "Dither") {
       return DitherSubtypeOptions
     }
@@ -846,6 +886,21 @@ class FilterParams extends React.Component<FilterParamsProps, unknown> {
           }),
       }
       if (parameter === "filename") return this.filenameField(parameters["filename"] as string, propValue, commonProps)
+      if (parameter === "slope" && this.props.filter.type === "Crossover")
+        return (
+          <EnumOption
+            {...commonProps}
+            key={commonProps.key}
+            value={String(propValue)}
+            options={CrossoverSlopes.map((slope) => ({ value: String(slope), label: `${slope} dB/oct` }))}
+            tooltip="Filter slope in dB per octave"
+            onChange={(value) =>
+              this.props.updateFilter((filter) => {
+                filter.parameters.slope = parseInt(value)
+              })
+            }
+          />
+        )
       if (this.isHiddenDefaultValue(parameter)) return null
       if (
         (this.qAndSlopeFilters.includes(parameters.type as string) ||

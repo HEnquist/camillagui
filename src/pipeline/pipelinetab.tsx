@@ -28,9 +28,11 @@ import { ChartContent, ChartPopup } from "../utilities/chart"
 import { Update } from "../utilities/common"
 import { DndContainer, DndSortable, DragHandle, useDndSort } from "../utilities/dragndrop"
 import { Errors } from "../utilities/errors"
+import { CrossoverLatency, fetchCrossoverLatency, formatLatency } from "../utilities/latency"
 import {
   AddButton,
   BypassOption,
+  delayedExecutor,
   Box,
   ChannelSelection,
   DeleteButton,
@@ -57,6 +59,7 @@ export class PipelineTab extends React.Component<
     stepIndex?: number
     data: ChartContent
     capture_channels: number
+    latency?: CrossoverLatency
   }
 > {
   constructor(props: PipelineTabProps) {
@@ -75,7 +78,40 @@ export class PipelineTab extends React.Component<
   }
   componentDidMount() {
     getCaptureDeviceChannelCount(this.props.config.devices.capture).then((channels) =>
-      this.setState({ capture_channels: channels }),
+      this.setState({ capture_channels: channels }, this.updateLatency),
+    )
+  }
+
+  componentDidUpdate(prevProps: Readonly<PipelineTabProps>) {
+    const prev = prevProps.config
+    const config = this.props.config
+    if (
+      prev.pipeline !== config.pipeline ||
+      prev.filters !== config.filters ||
+      prev.mixers !== config.mixers ||
+      prev.devices.samplerate !== config.devices.samplerate
+    )
+      this.latencyTimer(this.updateLatency)
+  }
+
+  private latencyTimer = delayedExecutor(500)
+
+  updateLatency = () => {
+    const config = this.props.config
+    const hasCrossover = Object.values(config.filters ?? {}).some((filter) => filter.type === "Crossover")
+    if (!hasCrossover) {
+      this.setState({ latency: undefined })
+      return
+    }
+    const latencyConfig = {
+      devices: { samplerate: config.devices.samplerate, capture: { channels: this.state.capture_channels } },
+      filters: config.filters,
+      mixers: config.mixers,
+      pipeline: config.pipeline,
+    }
+    fetchCrossoverLatency(latencyConfig).then(
+      (latency) => this.setState({ latency }),
+      () => this.setState({ latency: undefined }),
     )
   }
 
@@ -219,6 +255,18 @@ export class PipelineTab extends React.Component<
                 />
               </div>
               <div className="pipeline-channel">Playback: {config.devices.playback.channels} channels out</div>
+              {this.state.latency && this.state.latency.total > 0 && (
+                <div
+                  className="pipeline-channel"
+                  data-tooltip-html={
+                    "Delay added by crossover filters.<br>" +
+                    "Channels with less crossover delay are delayed automatically to stay aligned."
+                  }
+                  data-tooltip-id="main-tooltip"
+                >
+                  Crossover latency: {formatLatency(this.state.latency.total, this.state.latency.samplerate)}
+                </div>
+              )}
               <PipelinePopup
                 key={String(this.state.plotPipeline)}
                 open={this.state.plotPipeline}

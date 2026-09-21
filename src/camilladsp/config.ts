@@ -267,6 +267,7 @@ export type FilterType =
   | "Biquad"
   | "BiquadCombo"
   | "Conv"
+  | "Crossover"
   | "Delay"
   | "Gain"
   | "Volume"
@@ -282,6 +283,7 @@ export const FilterTypeOptions: { value: FilterType; label: string }[] = [
     label: "BiquadCombo : Combination of several biquads",
   },
   { value: "Conv", label: "Conv : Convolution" },
+  { value: "Crossover", label: "Crossover : Linear-phase FIR crossover" },
   {
     value: "Delay",
     label: "Delay : Delay with optional subsample precision",
@@ -403,6 +405,13 @@ export const ConvSubtypeOptions: { value: FilterSubtype; label: string }[] = [
   { value: "Dummy", label: "Dummy : Dummy coefficients for load testing" },
 ]
 
+export const CrossoverSubtypeOptions: { value: FilterSubtype; label: string }[] = [
+  { value: "Lowpass", label: "Lowpass : Linear-phase lowpass" },
+  { value: "Highpass", label: "Highpass : Linear-phase highpass" },
+]
+
+export const CrossoverSlopes = [12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96]
+
 export const DitherSubtypeOptions: { value: FilterSubtype; label: string }[] = [
   { value: "None", label: "None : No dither, only truncation" },
   { value: "Flat", label: "Flat : Flat (unshaped) dither" },
@@ -517,6 +526,10 @@ export const DefaultFilterParameters: {
     Wav: { type: "Wav", filename: "", channel: 0 },
     Values: { type: "Values", values: [1.0, 0.0, 0.0, 0.0] },
     Dummy: { type: "Dummy", length: 1024 },
+  },
+  Crossover: {
+    Lowpass: { type: "Lowpass", freq: 1000, slope: 24 },
+    Highpass: { type: "Highpass", freq: 1000, slope: 24 },
   },
   Delay: {
     Default: { delay: 0.0, unit: "ms", subsample: false },
