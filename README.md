@@ -1,6 +1,11 @@
 CamillaGUI frontend
 ---
 
+> **This repository has moved.** As of CamillaDSP 5.0 the frontend is developed in the `frontend`
+> directory of [camillagui-backend](https://github.com/HEnquist/camillagui-backend), together with
+> the backend, and its full history came along. Issues and pull requests go there. This repository
+> is kept for the 4.x releases and will be archived.
+
 This is the frontend of  CamillaGUI, the part that runs in the browser and handles the actual interface.
 
 The backend is located here: https://github.com/HEnquist/camillagui-backend
